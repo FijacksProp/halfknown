@@ -1,6 +1,6 @@
 # Halfknown backend foundation
 
-Status: implemented backend APIs, not yet connected to the visual prototype. No live matching queue or person-to-person chat yet.
+Status: backend APIs and local frontend onboarding integration implemented. No live matching queue or person-to-person chat yet. Hosted integration is pending a deployed Django endpoint.
 
 ## Architecture decision
 
@@ -12,7 +12,7 @@ Production Django needs a Python/ASGI host. The existing Cloudflare/Sites previe
 
 ## Session and CSRF contract
 
-Prefer a single browser origin in the final deployment: route `/api/`, `/ws/`, and `/admin/` to Django and other paths to the frontend. This avoids broad CORS exceptions and cross-site cookies. Local frontend proxy configuration is still pending.
+Prefer a single browser origin in the final deployment: route `/api/`, `/ws/`, and `/admin/` to Django and other paths to the frontend. This avoids broad CORS exceptions and cross-site cookies. The local Vite proxy now forwards `/api/` and `/ws/` on port 3000 to Django on port 8000. Admin remains directly accessible on port 8000. Production routing is not yet configured.
 
 1. GET `/api/v1/auth/csrf/` with cookies enabled.
 2. Keep the returned `csrf_token` in memory. Send it as `X-CSRFToken` on every POST/PUT/PATCH/DELETE, including requests made before login.
@@ -39,6 +39,7 @@ API responses include private/no-store cache controls, including authentication 
 | GET | `/api/v1/catalog/` | Allowed profile/preference values and policy version |
 | GET | `/api/v1/identity-preview/` | Generate an unreserved alias/avatar suggestion |
 | GET | `/api/v1/profile/` | Read current owner's profile/preferences |
+| POST | `/api/v1/profile/` | Create onboarding profile only; 409 if it already exists |
 | PUT | `/api/v1/profile/` | Atomically create/update onboarding profile |
 | PUT | `/api/v1/preferences/` | Replace current owner's preferences |
 | POST | `/api/v1/blocks/` | Idempotently block a profile |
@@ -138,7 +139,11 @@ Session validity is rechecked on incoming/outgoing events and every 30 seconds w
 
 Functional tests exercise OTP replay/expiry/lockout, CSRF rotation, account restrictions, privacy boundaries, birthday validation, mutual eligibility, blocks, socket Origin checks, event authorization, and session revocation. A separate PostgreSQL-only test verifies concurrent single-use OTP consumption.
 
-Local SQLite tests cannot establish PostgreSQL locking or Redis cross-process delivery. Docker, PostgreSQL/Redis integration, real worker delivery, production hosting, frontend integration, and load testing remain unverified until those environments run. Do not claim a concurrency capacity or latency target from functional tests.
+Frontend unit tests cover the cookie/CSRF API contract, token refresh, validation errors, code failure, unavailable services, birth-date boundaries, preferences, and unchecked consent defaults. The local HTTP smoke check exercises the same API client through the frontend proxy. Reload/session recovery is implemented; browser interaction and visual QA have not been performed.
+
+POST onboarding creation locks the user row before checking for an existing profile, so another tab cannot overwrite a completed profile through this path. A 409 causes the frontend to retrieve the saved profile instead. PUT remains the explicit full-update endpoint; preferences have their own PUT endpoint. The old preview tool that could mark onboarding complete in memory was removed; completion now depends on a server response.
+
+Local SQLite tests cannot establish PostgreSQL locking or Redis cross-process delivery. Docker, PostgreSQL/Redis integration, real worker delivery, production hosting, and load testing remain unverified until those environments run. Do not claim a concurrency capacity or latency target from functional tests.
 
 ## Sources
 
@@ -146,3 +151,4 @@ Local SQLite tests cannot establish PostgreSQL locking or Redis cross-process de
 - [Channels authentication](https://channels.readthedocs.io/en/stable/topics/authentication.html)
 - [Channels production channel layers](https://channels.readthedocs.io/en/stable/topics/channel_layers.html)
 - [Celery introduction](https://docs.celeryq.dev/en/stable/getting-started/introduction.html)
+- [Vite development proxy and WebSocket Origin guidance](https://vite.dev/config/server-options#server-proxy)

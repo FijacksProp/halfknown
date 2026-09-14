@@ -11,6 +11,24 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///db.sqlite3")
 from .base import *  # noqa: E402,F403
 
 DEBUG = True
+CSRF_TRUSTED_ORIGINS = list(
+    dict.fromkeys(
+        [
+            *CSRF_TRUSTED_ORIGINS,  # noqa: F405
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+    )
+)
+WS_ALLOWED_ORIGINS = list(
+    dict.fromkeys(
+        [
+            *WS_ALLOWED_ORIGINS,  # noqa: F405
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+    )
+)
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.filebased.EmailBackend")  # noqa: F405
 EMAIL_FILE_PATH = BASE_DIR / ".local-mail"  # noqa: F405
 EMAIL_FILE_PATH.mkdir(exist_ok=True)

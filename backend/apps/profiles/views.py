@@ -50,6 +50,12 @@ class ProfileView(APIView):
         )
 
     def put(self, request):
+        return self.save_profile(request, create_only=False)
+
+    def post(self, request):
+        return self.save_profile(request, create_only=True)
+
+    def save_profile(self, request, *, create_only):
         data = OnboardingInput(data=request.data)
         data.is_valid(raise_exception=True)
         values = dict(data.validated_data)
@@ -60,6 +66,8 @@ class ProfileView(APIView):
         values.pop("accepted_guidelines")
         with transaction.atomic():
             user = User.objects.select_for_update().get(pk=request.user.pk)
+            if create_only and Profile.objects.filter(user=user).exists():
+                return Response({"detail": "Your profile already exists. Reload it to continue."}, status=409)
             private = PrivateProfile.objects.filter(user=user).first()
             if private and private.birth_date != birth_date:
                 raise ValidationError({"birth_date": "Contact support to correct your birth date."})

@@ -80,3 +80,38 @@ button, input { font: inherit; } button { cursor: pointer; }
 @media (max-width:900px) { .onboarding-layout { grid-template-columns: 1fr; gap: 44px; max-width: 640px; } .story-panel { text-align: center; margin: 24px auto 0; } .story-panel h1 { font-size: clamp(3rem,11vw,5rem); } .story-lead { margin-inline: auto; } .promise-list { display: none; } .site-footer { margin-top: 40px; } }
 @media (max-width:600px) { .topbar,.site-footer,.onboarding-layout,.ready-view { width: min(100% - 28px,100%); } .topbar { height: 72px; } .privacy-note { font-size: .72rem; } .story-panel { margin-top: 10px; } .story-panel h1 { margin: 15px 0; } .story-lead { font-size: .94rem; } .onboarding-card { min-height: 575px; padding: 24px 19px; border-radius: 22px; } .step-content { min-height: 420px; padding-top: 29px; } .choice-grid,.mode-grid { grid-template-columns: 1fr; } .choice-card { min-height: 76px; } .site-footer { flex-wrap: wrap; gap: 12px 18px; padding: 18px 0; } .site-footer span:nth-child(2) { width: 100%; order: 3; } .ready-view { padding-top: 45px; } .mode-card { min-height: 255px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior: auto!important; animation-duration: .01ms!important; animation-iteration-count: 1!important; transition-duration: .01ms!important; } }
+
+/* Functional onboarding additions. Full brand redesign is a separate milestone. */
+fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.step-content { border: 0; margin: 0; }
+.form-field { display: grid; gap: .6rem; margin-top: 1.4rem; font-size: 1rem; }
+.form-field input, .form-field select { min-height: 46px; font-size: 1rem; }
+.form-field [data-slot='native-select-wrapper'] { width: 100%; }
+.field-note { margin-top: .6rem; font-size: .875rem; color: #b7aecb; line-height: 1.6; }
+.preference-fields { margin-top: 1.4rem; }
+.preference-fields legend { font-size: 1rem; }
+.preference-fields .interest-grid { margin-top: .8rem; }
+.age-range { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.consent-row { display: flex; align-items: flex-start; gap: .75rem; margin-top: 1.25rem; font-size: .9375rem; line-height: 1.6; cursor: pointer; }
+.consent-row [data-slot='checkbox'] { margin-top: .25rem; }
+.policy-details { margin-top: 1.5rem; font-size: .9375rem; line-height: 1.6; color: #d4cde0; }
+.policy-details summary { cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+.policy-details p { margin-block: .8rem; }
+.secondary-action { margin-top: 1.5rem; font-size: .9375rem; }
+.avatar-preview { display: flex; align-items: center; gap: .65rem; margin-top: 1.5rem; font-size: .9375rem; }
+.avatar-preview > svg { width: 24px; flex-shrink: 0; }
+.form-error, .form-notice { padding: .9rem; border-radius: .6rem; font-size: .9375rem; line-height: 1.6; overflow-wrap: anywhere; }
+.form-error { color: #ffd4d0; background: #66333666; }
+.form-notice { color: #d8fff1; background: #23584966; }
+.otp-slot { width: clamp(32px, 7vw, 48px); height: 52px; font-size: 1.2rem; }
+.interest-chip { font-size: .9375rem; }
+.selection-count, .card-topline, .site-footer, .mode-status { font-size: .875rem; }
+.ready-copy h1, .profile-pill { overflow-wrap: anywhere; }
+.ready-copy h1 { font-size: clamp(2rem, 5vw, 3.8rem); }
+.account-summary { padding-top: 1rem; }
+.mode-card:hover { transform: none; }
+.edit-profile { font-size: 1rem; }
+.step-heading h2:focus { outline: none; }
+.interest-chip:has(:focus-visible), .consent-row:has(:focus-visible) { outline: 2px solid #c99aff; outline-offset: 4px; }
+button:disabled { cursor: not-allowed; }
+output { display: block; }

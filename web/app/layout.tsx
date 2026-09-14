@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Unveil — Meet the mind first',
+  title: 'halfknown — Meet the mind first',
   description: 'A personality-first way to meet, talk, and reveal yourself only when it feels mutual.',
 };
 

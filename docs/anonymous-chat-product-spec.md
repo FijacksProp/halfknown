@@ -13,8 +13,8 @@
 - International audience, adults 18+, with English as the initial interface language. Friendship, conversation, and dating receive equal care, with a slight romantic emphasis.
 - Playful and youthful, balanced with mature, intimate, safety-focused interactions. The planned visual palette is white, red, black, and blue.
 - Illustrated fictional humans, animals, aliens, and other creatures. Initial character artwork will be AI-generated in a later session; the current system uses placeholder avatar identifiers.
-- Django is the backend foundation. Standard Next.js/React/TypeScript is the frontend target. The existing `web/` implementation is a Vinext visual prototype, not yet integrated with Django and not yet an installable PWA.
-- Implemented: email-code authentication, private account/profile separation, adult birth-date validation, matching preferences, blocks, mutual eligibility rules, and authenticated account WebSockets.
+- Django is the backend foundation. Standard Next.js/React/TypeScript is the frontend target. The existing `web/` implementation uses Vinext and now integrates onboarding with Django locally; it is not yet an installable PWA. The prior hosted preview is not connected to the backend.
+- Implemented: email-code authentication, private account/profile separation, adult birth-date validation, matching preferences, blocks, mutual eligibility rules, and authenticated account WebSockets. Local onboarding supports profile creation after verification, returning sign-in, session-based recovery, preference editing, and logout. Character assets remain placeholders and development disclosures are not final launch policies.
 - Not yet implemented: live matching queues, person-to-person messaging, progressive reveal, reporting/moderator workflows, payments, or production deployment. Email verification proves inbox access, not identity or age.
 
 This document describes the intended product, not a claim that all listed features work today. See [the backend API contract](backend-api.md) and [setup instructions](../README.md) for implementation details.

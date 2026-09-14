@@ -1,0 +1,100 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { ApiError, createApi } from '../lib/api.ts';
+
+function harness(responses) {
+  const calls = [];
+  const api = createApi(async (url, options) => {
+    calls.push({ url, ...options });
+    const response = responses.shift();
+    if (!response) throw new Error('Unexpected request');
+    return response;
+  });
+  return { api, calls };
+}
+const json = (body, status = 200) => Response.json(body, { status });
+
+test('all writes use fresh CSRF, including token rotation after verification', async () => {
+  const { api, calls } = harness([
+    json({ csrf_token: 'before-login' }),
+    json({ id: 'user', csrf_token: 'rotated' }),
+    json({ csrf_token: 'after-login' }),
+    json({ profile: { alias: 'SavedAlias' } }),
+  ]);
+  await api.verifyCode('challenge', '123456');
+  await api.createProfile({ interests: ['music', 'books', 'art'] });
+  assert.equal(calls[1].headers.get('X-CSRFToken'), 'before-login');
+  assert.equal(calls[3].headers.get('X-CSRFToken'), 'after-login');
+  assert.equal(calls[1].url, '/api/v1/auth/verify-code/');
+  assert.equal(calls[3].method, 'POST');
+  for (const call of calls) {
+    assert.equal(call.credentials, 'same-origin');
+    assert.equal(call.cache, 'no-store');
+    assert.ok(call.signal instanceof AbortSignal);
+    assert.equal(call.headers.get('Authorization'), null);
+  }
+});
+
+test('GET does not request CSRF or send unnecessary credentials in headers', async () => {
+  const { api, calls } = harness([json({ id: 'owner' })]);
+  assert.deepEqual(await api.me(), { id: 'owner' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.get('X-CSRFToken'), null);
+});
+
+test('verification failure is shown and not automatically replayed', async () => {
+  const { api, calls } = harness([
+    json({ csrf_token: 'token' }),
+    json({ detail: 'Invalid or expired code.' }, 400),
+  ]);
+  await assert.rejects(api.verifyCode('challenge', '000000'), {
+    status: 400,
+    message: 'Invalid or expired code.',
+  });
+  assert.equal(calls.length, 2);
+});
+
+test('rate limits and nested validation errors remain useful to the form', async () => {
+  const { api } = harness([
+    json({ csrf_token: 'token' }),
+    json({ detail: 'Try again later.' }, 429),
+  ]);
+  await assert.rejects(api.requestCode('test@example.com'), {
+    status: 429,
+    message: 'Try again later.',
+  });
+  assert.equal(
+    new ApiError(400, { preferences: { min_age: ['Must be 18 or above.'] } })
+      .message,
+    'min age: Must be 18 or above.',
+  );
+});
+
+test('logout accepts 204 and sends a CSRF-protected POST', async () => {
+  const { api, calls } = harness([
+    json({ csrf_token: 'token' }),
+    new Response(null, { status: 204 }),
+  ]);
+  assert.equal(await api.logout(), undefined);
+  assert.equal(calls[1].method, 'POST');
+});
+
+test('unavailable proxy response never leaks HTML/debug pages into the UI', async () => {
+  const { api } = harness([
+    new Response('<html>private debug page</html>', { status: 502 }),
+  ]);
+  await assert.rejects(api.catalog(), {
+    status: 502,
+    message: 'The account service is unavailable. Please try again shortly.',
+  });
+});
+
+test('network failures give a recoverable message', async () => {
+  const api = createApi(async () => {
+    throw new TypeError('network failure');
+  });
+  await assert.rejects(api.me(), {
+    status: 0,
+    message: 'Could not reach Halfknown. Check your connection and try again.',
+  });
+});

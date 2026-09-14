@@ -74,3 +74,18 @@ def test_public_catalog_and_identity_preview(client):
     second = client.get("/api/v1/identity-preview/").data
     assert first["alias"] != second["alias"]
     assert set(first) == {"alias", "avatar_id"}
+
+
+def test_onboarding_post_never_overwrites_an_existing_profile(signed_in, user, profile_payload):
+    created = signed_in.post("/api/v1/profile/", profile_payload, format="json")
+    assert created.status_code == 201
+    profile_payload["interests"] = ["gaming", "films", "fitness"]
+    response = signed_in.post("/api/v1/profile/", profile_payload, format="json")
+    assert response.status_code == 409
+    assert Profile.objects.get(user=user).interests == created.data["profile"]["interests"]
+    assert Profile.objects.count() == 1
+
+
+def test_onboarding_post_requires_verification(client, profile_payload):
+    assert client.post("/api/v1/profile/", profile_payload, format="json").status_code == 403
+    assert not Profile.objects.exists()

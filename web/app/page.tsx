@@ -1,224 +1,909 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, EyeOff, Flame, Heart, MessageCircle, MoonStar, RefreshCw, ShieldCheck, Sparkles, Users, Waves } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  EyeOff,
+  Heart,
+  MessageCircle,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from '@/components/ui/input-otp';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
 import { Progress } from '@/components/ui/progress';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  api,
+  ApiError,
+  type Account,
+  type Catalog,
+  type Onboarding,
+  type Preferences,
+  type SavedProfile,
+} from '@/lib/api';
+import {
+  adultBirthDate,
+  emptyDraft,
+  emptyPreferences,
+  label,
+  stepValid,
+  toggleChoice,
+  validPreferences,
+} from '@/lib/onboarding';
 
-const intentions = [
-  { id: 'dating', label: 'Dating', note: 'Something with real potential', icon: Heart },
-  { id: 'flirting', label: 'Flirting', note: 'Playful conversation, no pressure', icon: Flame },
-  { id: 'friendship', label: 'Friendship', note: 'Meet someone on your wavelength', icon: Users },
-  { id: 'conversation', label: 'Just talking', note: 'A good chat with someone new', icon: MessageCircle },
-];
-
-const interests = ['Music', 'Films', 'Gaming', 'Books', 'Travel', 'Food', 'Tech', 'Fitness', 'Art', 'Late-night talks', 'Big questions', 'Comedy'];
-const avatars = [
-  { name: 'QuietComet', icon: Sparkles, className: 'avatar-violet' },
-  { name: 'VelvetMoon', icon: MoonStar, className: 'avatar-coral' },
-  { name: 'NeonTide', icon: Waves, className: 'avatar-cyan' },
-  { name: 'EmberEcho', icon: Flame, className: 'avatar-gold' },
-];
-const totalSteps = 4;
-
-type OnboardingToolInput = {
-  intention: string;
-  age: number;
-  interests: string[];
-  email: string;
+type Screen =
+  | 'loading'
+  | 'onboarding'
+  | 'signin'
+  | 'verify'
+  | 'ready'
+  | 'preferences';
+const languages = {
+  en: 'English',
+  fr: 'French',
+  es: 'Spanish',
+  pt: 'Portuguese',
+  de: 'German',
+  ar: 'Arabic',
+  hi: 'Hindi',
+  ja: 'Japanese',
+  zh: 'Chinese',
+  yo: 'Yoruba',
+  ig: 'Igbo',
+  ha: 'Hausa',
 };
-
-type ModelContext = {
-  registerTool: (
-    tool: {
-      name: string;
-      title: string;
-      description: string;
-      inputSchema: object;
-      annotations: { readOnlyHint: boolean; untrustedContentHint: boolean };
-      execute: (input: unknown) => unknown;
-    },
-    options?: { signal?: AbortSignal },
-  ) => void | Promise<void>;
-};
-
-declare global {
-  interface Document {
-    modelContext?: ModelContext;
-  }
-}
 
 export default function Home() {
+  const [screen, setScreen] = useState<Screen>('loading');
   const [step, setStep] = useState(1);
-  const [intention, setIntention] = useState('dating');
-  const [age, setAge] = useState('');
-  const [selectedInterests, setSelectedInterests] = useState<string[]>(['Music', 'Late-night talks']);
-  const [avatarIndex, setAvatarIndex] = useState(0);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [draft, setDraft] = useState<Onboarding>(emptyDraft);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [saved, setSaved] = useState<SavedProfile | null>(null);
+  const [preferences, setPreferences] = useState<Preferences>(emptyPreferences);
   const [email, setEmail] = useState('');
-  const [complete, setComplete] = useState(false);
-
-  const avatar = avatars[avatarIndex];
-  const AvatarIcon = avatar.icon;
-  const progress = (step / totalSteps) * 100;
-  const canContinue = useMemo(() => {
-    if (step === 2) return Number(age) >= 18;
-    if (step === 3) return selectedInterests.length >= 3;
-    if (step === 4) return /^\S+@\S+\.\S+$/.test(email);
-    return true;
-  }, [age, email, selectedInterests.length, step]);
+  const [code, setCode] = useState('');
+  const [challengeId, setChallengeId] = useState('');
+  const [returning, setReturning] = useState(false);
+  const [resendAt, setResendAt] = useState(0);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const working = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    const context = document.modelContext;
-    if (!context?.registerTool) return;
-    const lifecycle = new AbortController();
+    let active = true;
+    async function boot() {
+      try {
+        const [options, identity, me] = await Promise.all([
+          api.catalog(),
+          api.preview(),
+          api.me().catch((reason: unknown) => {
+            if (reason instanceof ApiError && reason.status === 403)
+              return null;
+            throw reason;
+          }),
+        ]);
+        const profile = me?.onboarding_complete ? await api.profile() : null;
+        if (!active) return;
+        setCatalog(options);
+        setDraft((current) => ({
+          ...current,
+          avatar_id: identity.avatar_id,
+          policy_version: options.policy_version,
+        }));
+        setAccount(me);
+        setSaved(profile);
+        setEmail(me?.email ?? '');
+        setScreen(profile ? 'ready' : 'onboarding');
+      } catch (reason) {
+        if (active)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'Could not load your account.',
+          );
+      }
+    }
+    void boot();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-    const registration = context.registerTool({
-      name: 'complete_onboarding_preview',
-      title: 'Complete onboarding preview',
-      description: 'Configure and complete the visible anonymous-profile onboarding preview.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          intention: { type: 'string', enum: intentions.map((item) => item.id) },
-          age: { type: 'integer', minimum: 18, maximum: 100 },
-          interests: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string', enum: interests } },
-          email: { type: 'string', format: 'email' },
-        },
-        required: ['intention', 'age', 'interests', 'email'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input) {
-        const value = input as OnboardingToolInput;
-        if (!intentions.some((item) => item.id === value.intention)) throw new Error('Choose a supported intention.');
-        if (!Number.isInteger(value.age) || value.age < 18 || value.age > 100) throw new Error('Age must be between 18 and 100.');
-        if (!Array.isArray(value.interests) || value.interests.length < 3 || value.interests.length > 5 || value.interests.some((item) => !interests.includes(item))) throw new Error('Choose 3 to 5 supported interests.');
-        if (!/^\S+@\S+\.\S+$/.test(value.email)) throw new Error('Enter a valid email address.');
+  useEffect(() => {
+    heading.current?.focus();
+  }, [screen, step]);
+  useEffect(() => {
+    const update = () =>
+      setSecondsLeft(Math.max(0, Math.ceil((resendAt - Date.now()) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendAt]);
 
-        setIntention(value.intention);
-        setAge(String(value.age));
-        setSelectedInterests(value.interests);
-        setEmail(value.email);
-        setStep(totalSteps);
-        setComplete(true);
-        return { status: 'complete', alias: avatars[avatarIndex].name };
-      },
-    }, { signal: lifecycle.signal });
-
-    void Promise.resolve(registration).catch(() => undefined);
-    return () => lifecycle.abort();
-  }, [avatarIndex]);
-
-  function toggleInterest(interest: string) {
-    setSelectedInterests((current) => current.includes(interest)
-      ? current.filter((item) => item !== interest)
-      : current.length < 5 ? [...current, interest] : current);
+  function change<K extends keyof Onboarding>(key: K, value: Onboarding[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function nextStep() {
-    if (!canContinue) return;
-    if (step === totalSteps) return setComplete(true);
-    setStep((current) => current + 1);
+  async function run(action: () => Promise<void>) {
+    if (working.current) return;
+    working.current = true;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await action();
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 403) {
+        setAccount(null);
+        setSaved(null);
+        setChallengeId('');
+        setCode('');
+        setScreen('signin');
+        setReturning(true);
+        setError(
+          'Your session needs refreshing. Sign in again; your unsaved choices are still here.',
+        );
+      } else {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'Something went wrong. Please try again.',
+        );
+      }
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
   }
 
-  if (complete) {
-    return (
-      <main className="app-shell">
-        <div className="ambient ambient-one" /><div className="ambient ambient-two" />
-        <header className="topbar">
-          <Brand />
-          <div className="profile-pill"><span className={`mini-avatar ${avatar.className}`}><AvatarIcon aria-hidden="true" /></span><span>{avatar.name}</span></div>
-        </header>
-        <section className="ready-view">
-          <div className="ready-copy">
-            <span className="eyebrow"><Check /> Your anonymous profile is ready</span>
-            <h1>How do you want to meet someone?</h1>
-            <p>Choose your pace. Your real identity stays private until you both decide otherwise.</p>
-          </div>
-          <div className="mode-grid">
-            <button className="mode-card mode-card-open" type="button">
-              <span className="mode-icon"><MessageCircle /></span><span className="mode-status"><i /> Usually instant</span>
-              <span className="mode-title">Open Chat</span><span className="mode-description">Jump into a topic-first conversation with anyone open to meeting.</span>
-              <span className="mode-link">Find someone now <ArrowRight /></span>
-            </button>
-            <button className="mode-card mode-card-match" type="button">
-              <span className="mode-icon"><Heart /></span><span className="mode-status"><Sparkles /> More intentional</span>
-              <span className="mode-title">Compatible Match</span><span className="mode-description">Meet a surprise person who fits your mutual preferences and vibe.</span>
-              <span className="mode-link">Find a compatible match <ArrowRight /></span>
-            </button>
-          </div>
-          <button className="edit-profile" type="button" onClick={() => setComplete(false)}>Edit my profile</button>
-        </section>
-      </main>
+  async function persistProfile() {
+    // Another tab may have completed onboarding. Do not overwrite that profile with a new draft.
+    const me = await api.me();
+    setAccount(me);
+    if (me.onboarding_complete) {
+      setSaved(await api.profile());
+      setScreen('ready');
+      return;
+    }
+    let result: SavedProfile;
+    try {
+      result = await api.createProfile(draft);
+    } catch (reason) {
+      if (!(reason instanceof ApiError) || reason.status !== 409) throw reason;
+      result = await api.profile();
+    }
+    setSaved(result);
+    setAccount({ ...me, onboarding_complete: true });
+    setDraft(emptyDraft());
+    setScreen('ready');
+  }
+
+  async function sendCode() {
+    const result = await api.requestCode(email.trim());
+    setChallengeId(result.challenge_id);
+    setCode('');
+    setResendAt(Date.now() + 60_000);
+    setScreen('verify');
+    setNotice(
+      'If this address can sign in, a six-digit code is on its way. It expires after 10 minutes.',
     );
+  }
+
+  async function verify() {
+    await api.verifyCode(challengeId, code);
+    setCode('');
+    setChallengeId('');
+    // If profile recovery fails, the user can retry sign-in or reload; the OTP is already consumed.
+    setScreen('signin');
+    const me = await api.me();
+    setAccount(me);
+    setEmail(me.email);
+    if (me.onboarding_complete) {
+      setSaved(await api.profile());
+      setDraft(emptyDraft());
+      setScreen('ready');
+    } else if (returning) {
+      setDraft((current) => ({
+        ...current,
+        avatar_id: current.avatar_id || catalog!.avatars[0],
+        policy_version: catalog!.policy_version,
+      }));
+      setStep(1);
+      setScreen('onboarding');
+      setNotice('You are signed in. Finish your profile to continue.');
+    } else {
+      // A failed save is retried without asking for the consumed code again.
+      setStep(4);
+      setScreen('onboarding');
+      await persistProfile();
+    }
+  }
+
+  async function signOut() {
+    await api.logout();
+    setAccount(null);
+    setSaved(null);
+    setEmail('');
+    setCode('');
+    setChallengeId('');
+    setPreferences(emptyPreferences());
+    setDraft({
+      ...emptyDraft(),
+      avatar_id: catalog!.avatars[0],
+      policy_version: catalog!.policy_version,
+    });
+    setStep(1);
+    setScreen('signin');
+    setReturning(true);
+    setNotice('You are signed out.');
+  }
+
+  const editingPreferences = screen === 'preferences';
+  const inOnboarding = screen === 'onboarding';
+  const inEmail = screen === 'signin' || (inOnboarding && step === 4);
+  const canContinue =
+    screen === 'verify'
+      ? /^[0-9]{6}$/.test(code)
+      : screen === 'signin'
+        ? !!email.trim()
+        : editingPreferences
+          ? validPreferences(preferences)
+          : stepValid(step, draft) &&
+            (step !== 4 || !!account || !!email.trim());
+
+  async function submit() {
+    if (!canContinue) return;
+    if (screen === 'verify') return verify();
+    if (screen === 'signin') return sendCode();
+    if (editingPreferences) {
+      const result = await api.savePreferences(preferences);
+      setSaved((current) =>
+        current ? { ...current, preferences: result } : null,
+      );
+      setScreen('ready');
+      setNotice('Matching preferences saved.');
+      return;
+    }
+    if (step < 4) {
+      setStep(step + 1);
+      return;
+    }
+    if (account) return persistProfile();
+    setReturning(false);
+    await sendCode();
   }
 
   return (
     <main className="app-shell">
-      <div className="ambient ambient-one" /><div className="ambient ambient-two" />
-      <header className="topbar"><Brand /><div className="privacy-note"><EyeOff /> Anonymous by default</div></header>
-      <section className="onboarding-layout">
-        <div className="story-panel">
-          <span className="eyebrow"><Sparkles /> Conversation comes first</span>
-          <h1>Meet the mind.<br /><em>Then</em> the face.</h1>
-          <p className="story-lead">Start with a vibe, not a profile photo. You decide what to reveal—and only when it feels mutual.</p>
-          <div className="promise-list">
-            <div><ShieldCheck /><span><strong>Private by design</strong>Your identity stays yours.</span></div>
-            <div><Heart /><span><strong>Mutual at every step</strong>No reveal happens alone.</span></div>
-            <div><MessageCircle /><span><strong>Built for real talk</strong>Prompts help the spark along.</span></div>
-          </div>
+      <div className="ambient ambient-one" />
+      <div className="ambient ambient-two" />
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">
+            <Sparkles aria-hidden="true" />
+          </span>
+          <span>halfknown</span>
+          <small>development</small>
         </div>
-
-        <div className="onboarding-card">
-          <div className="card-topline"><span>Step {step} of {totalSteps}</span><span>{Math.round(progress)}% complete</span></div>
-          <Progress value={progress} className="onboarding-progress" />
-          <div className="step-content" key={step}>
-            {step === 1 && <>
-              <div className="step-heading"><span className="step-kicker">Let&apos;s start with the feeling</span><h2>What brings you here?</h2><p>You can change this whenever your mood does.</p></div>
-              <RadioGroup value={intention} onValueChange={(value) => setIntention(String(value))} className="choice-grid">
-                {intentions.map((item) => { const Icon = item.icon; return (
-                  <label className={`choice-card ${intention === item.id ? 'is-selected' : ''}`} key={item.id}>
-                    <RadioGroupItem value={item.id} className="sr-only" /><span className="choice-icon"><Icon /></span>
-                    <span><strong>{item.label}</strong><small>{item.note}</small></span><span className="choice-check"><Check /></span>
-                  </label>); })}
-              </RadioGroup>
-            </>}
-
-            {step === 2 && <>
-              <div className="step-heading"><span className="step-kicker">One important check</span><h2>How old are you?</h2><p>This space is strictly for adults. Your birthday stays private.</p></div>
-              <div className="age-field"><Input type="number" min="18" max="100" inputMode="numeric" placeholder="Your age" value={age} onChange={(event) => setAge(event.target.value)} aria-label="Your age" />
-                {age && Number(age) < 18 ? <small>You must be at least 18 to join.</small> : null}</div>
-              <div className="safety-callout"><ShieldCheck /><span><strong>Why we ask</strong>Age boundaries are always respected in matching and cannot be bypassed.</span></div>
-            </>}
-
-            {step === 3 && <>
-              <div className="step-heading"><span className="step-kicker">Build your conversation orbit</span><h2>Pick 3–5 things you&apos;re into</h2><p>We&apos;ll use these to make first conversations feel less random.</p></div>
-              <div className="interest-grid">{interests.map((interest) => { const selected = selectedInterests.includes(interest); return (
-                <label className={`interest-chip ${selected ? 'is-selected' : ''}`} key={interest}><Checkbox checked={selected} onCheckedChange={() => toggleInterest(interest)} className="sr-only" />{interest}{selected ? <Check /> : null}</label>); })}</div>
-              <div className="selection-count">{selectedInterests.length} of 5 selected</div>
-            </>}
-
-            {step === 4 && <>
-              <div className="step-heading avatar-heading"><span className="step-kicker">Your first anonymous identity</span><h2>Meet {avatar.name}</h2><p>This is how new matches will know you. Shuffle until one feels right.</p></div>
-              <div className="avatar-stage"><div className={`avatar-orb ${avatar.className}`}><AvatarIcon aria-hidden="true" /></div>
-                <button className="shuffle-button" type="button" onClick={() => setAvatarIndex((avatarIndex + 1) % avatars.length)}><RefreshCw /> Shuffle identity</button></div>
-              <label className="email-field"><span>Where should we send your private sign-in link?</span><Input type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /><small>No password. Your email is never shown to matches.</small></label>
-            </>}
+        {account ? (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => void run(signOut)}
+          >
+            Sign out
+          </Button>
+        ) : (
+          <span className="privacy-note">
+            <EyeOff aria-hidden="true" /> Anonymous by default
+          </span>
+        )}
+      </header>
+      {screen === 'loading' ? (
+        <section className="ready-view">
+          <h1 ref={heading} tabIndex={-1}>
+            Opening Halfknown
+          </h1>
+          {error ? (
+            <>
+              <p role="alert">{error}</p>
+              <Button onClick={() => window.location.reload()}>
+                Try again
+              </Button>
+            </>
+          ) : (
+            <output>Checking your session…</output>
+          )}
+        </section>
+      ) : screen === 'ready' && saved ? (
+        <section className="ready-view">
+          <div className="ready-copy">
+            <span className="eyebrow">
+              <Check aria-hidden="true" /> Profile saved
+            </span>
+            <h1 ref={heading} tabIndex={-1}>
+              Welcome, {saved.profile.alias}.
+            </h1>
+            <p>
+              Your email is verified and your profile is saved. Matching and
+              messaging are still being built.
+            </p>
+            <p className="account-summary">
+              {saved.profile.interests.map(label).join(' · ')}
+            </p>
+            {notice && <output>{notice}</output>}
+            {error && <p role="alert">{error}</p>}
           </div>
-          <div className="card-actions">
-            <Button variant="ghost" size="lg" className="back-button" disabled={step === 1} onClick={() => setStep((current) => Math.max(1, current - 1))}><ArrowLeft /> Back</Button>
-            <Button size="lg" className="continue-button" disabled={!canContinue} onClick={nextStep}>{step === totalSteps ? 'Create my profile' : 'Continue'} <ArrowRight /></Button>
+          <div className="mode-grid">
+            <div className="mode-card mode-card-open">
+              <MessageCircle aria-hidden="true" />
+              <h2 className="mode-title">Open Chat</h2>
+              <p className="mode-description">
+                A conversation with any mutually eligible adult who has also
+                opted in.
+              </p>
+              <span className="mode-status">Not available yet</span>
+            </div>
+            <div className="mode-card mode-card-match">
+              <Heart aria-hidden="true" />
+              <h2 className="mode-title">Compatible Match</h2>
+              <p className="mode-description">
+                Introductions that respect both people’s matching preferences.
+              </p>
+              <span className="mode-status">Not available yet</span>
+            </div>
           </div>
-        </div>
-      </section>
-      <footer className="site-footer"><span>18+ only</span><span>Respect is the entry fee.</span><a href="#">Safety</a><a href="#">Privacy</a></footer>
+          <Button
+            className="edit-profile"
+            variant="ghost"
+            onClick={() => {
+              setPreferences({
+                ...saved.preferences,
+                genders: [...saved.preferences.genders],
+              });
+              setScreen('preferences');
+              setNotice('');
+            }}
+          >
+            Edit matching preferences
+          </Button>
+        </section>
+      ) : (
+        <section className="onboarding-layout">
+          <div className="story-panel">
+            <span className="eyebrow">
+              <Sparkles aria-hidden="true" /> Conversation comes first
+            </span>
+            <h1>
+              Meet the mind.
+              <br />
+              <em>Then</em> the face.
+            </h1>
+            <p className="story-lead">
+              Start with a little mystery. Bring your curiosity, pick your
+              interests, and keep your real-world identity private.
+            </p>
+            <div className="safety-callout">
+              <ShieldCheck aria-hidden="true" />
+              <span>
+                <strong>Development preview · adults only</strong>Use test
+                details. Chat is not live, character artwork is coming later,
+                and these are not the final launch policies.
+              </span>
+            </div>
+          </div>
+          <form
+            className="onboarding-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(submit);
+            }}
+            aria-busy={busy}
+          >
+            {inOnboarding && (
+              <>
+                <div className="card-topline">
+                  <span>Step {step} of 4</span>
+                  <span>{Math.round(((step - 1) / 4) * 100)}% of setup</span>
+                </div>
+                <Progress
+                  value={((step - 1) / 4) * 100}
+                  className="onboarding-progress"
+                />
+              </>
+            )}
+            <fieldset disabled={busy} className="step-content">
+              {inOnboarding && step === 1 && (
+                <>
+                  <StepHeading title="What brings you here?" ref={heading}>
+                    Choose one or more. There is room for different kinds of
+                    connection.
+                  </StepHeading>
+                  <ChoiceChips
+                    values={catalog!.intentions}
+                    selected={draft.intentions}
+                    onChange={(value) =>
+                      change(
+                        'intentions',
+                        toggleChoice(draft.intentions, value),
+                      )
+                    }
+                  />
+                  {!account && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="secondary-action"
+                      onClick={() => {
+                        setReturning(true);
+                        setScreen('signin');
+                        setError('');
+                      }}
+                    >
+                      Already joined? Sign in
+                    </Button>
+                  )}
+                </>
+              )}
+              {inOnboarding && step === 2 && (
+                <>
+                  <StepHeading title="Your boundaries come first" ref={heading}>
+                    Your birth date stays private. Halfknown is for adults aged
+                    18 and over.
+                  </StepHeading>
+                  <label className="form-field" htmlFor="birth-date">
+                    Date of birth
+                    <Input
+                      id="birth-date"
+                      type="date"
+                      value={draft.birth_date}
+                      required
+                      onChange={(event) =>
+                        change('birth_date', event.target.value)
+                      }
+                      aria-describedby="birthday-note"
+                    />
+                  </label>
+                  <p id="birthday-note" className="field-note">
+                    {draft.birth_date && !adultBirthDate(draft.birth_date)
+                      ? 'Enter a valid birth date. You must be at least 18.'
+                      : 'Enter this carefully; changing a saved birth date requires support.'}
+                  </p>
+                  <label className="form-field">
+                    Your gender
+                    <NativeSelect
+                      value={draft.gender}
+                      required
+                      onChange={(event) => change('gender', event.target.value)}
+                    >
+                      <NativeSelectOption value="">
+                        Choose an option
+                      </NativeSelectOption>
+                      {catalog!.genders.map((value) => (
+                        <NativeSelectOption value={value} key={value}>
+                          {label(value)}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <PreferenceFields
+                    values={draft.preferences}
+                    genders={catalog!.genders}
+                    onChange={(value) => change('preferences', value)}
+                  />
+                </>
+              )}
+              {inOnboarding && step === 3 && (
+                <>
+                  <StepHeading title="A little more you" ref={heading}>
+                    Pick 3–5 interests. These give a new conversation somewhere
+                    to start.
+                  </StepHeading>
+                  <ChoiceChips
+                    values={catalog!.interests}
+                    selected={draft.interests}
+                    onChange={(value) =>
+                      change(
+                        'interests',
+                        toggleChoice(draft.interests, value, 5),
+                      )
+                    }
+                  />
+                  <output className="selection-count">
+                    {draft.interests.length} of 5 selected
+                  </output>
+                  <label className="form-field">
+                    Chat language
+                    <NativeSelect
+                      value={draft.languages[0]}
+                      onChange={(event) =>
+                        change('languages', [event.target.value])
+                      }
+                    >
+                      {Object.entries(languages).map(([value, name]) => (
+                        <NativeSelectOption value={value} key={value}>
+                          {name}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <label className="form-field">
+                    Conversation style
+                    <NativeSelect
+                      value={draft.conversation_style}
+                      onChange={(event) =>
+                        change('conversation_style', event.target.value)
+                      }
+                    >
+                      {catalog!.styles.map((value) => (
+                        <NativeSelectOption value={value} key={value}>
+                          {label(value)}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <div className="avatar-preview">
+                    <Sparkles aria-hidden="true" />
+                    <span>{label(draft.avatar_id)} avatar · placeholder</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label="Shuffle avatar"
+                      onClick={() =>
+                        change(
+                          'avatar_id',
+                          catalog!.avatars[
+                            (catalog!.avatars.indexOf(draft.avatar_id) + 1) %
+                              catalog!.avatars.length
+                          ],
+                        )
+                      }
+                    >
+                      <RefreshCw aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <p className="field-note">
+                    Your anonymous alias will be assigned when your profile is
+                    saved.
+                  </p>
+                </>
+              )}
+              {inEmail && (
+                <>
+                  <StepHeading
+                    title={
+                      screen === 'signin'
+                        ? 'Good to have you here'
+                        : account
+                          ? 'Save your anonymous profile'
+                          : 'One last private step'
+                    }
+                    ref={heading}
+                  >
+                    {account
+                      ? `Signed in as ${account.email}.`
+                      : 'We will send a six-digit sign-in code. No password, and your email is never shown to matches.'}
+                  </StepHeading>
+                  {!account && (
+                    <label className="form-field" htmlFor="email-address">
+                      Email address
+                      <Input
+                        id="email-address"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        maxLength={254}
+                        placeholder="you@example.com"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                      />
+                    </label>
+                  )}
+                  {inOnboarding && (
+                    <>
+                      <details className="policy-details">
+                        <summary>
+                          Read the development terms and guidelines
+                        </summary>
+                        <p>
+                          This preview is for testing with non-sensitive
+                          details, not for live introductions. Sign-in stores
+                          your email. Saving a profile stores your birth date
+                          privately, plus your chosen interests and matching
+                          preferences. Sign out on shared devices. Unsaved
+                          choices are lost on refresh.
+                        </p>
+                        <p>
+                          Adults only. Do not impersonate others, harass,
+                          threaten, scam, or submit explicit content. Final
+                          privacy, retention, and community policies must be
+                          approved before public launch.
+                        </p>
+                        <p>Policy version: {catalog!.policy_version}</p>
+                      </details>
+                      <label className="consent-row" htmlFor="accept-terms">
+                        <Checkbox
+                          id="accept-terms"
+                          checked={draft.accepted_terms}
+                          onCheckedChange={(value) =>
+                            change('accepted_terms', value === true)
+                          }
+                        />
+                        <span>
+                          I have read and accept the development terms above.
+                        </span>
+                      </label>
+                      <label
+                        className="consent-row"
+                        htmlFor="accept-guidelines"
+                      >
+                        <Checkbox
+                          id="accept-guidelines"
+                          checked={draft.accepted_guidelines}
+                          onCheckedChange={(value) =>
+                            change('accepted_guidelines', value === true)
+                          }
+                        />
+                        <span>
+                          I agree to the adult-only community guidelines above.
+                        </span>
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
+              {screen === 'verify' && (
+                <>
+                  <StepHeading title="Check your inbox" ref={heading}>
+                    Enter the six-digit code for {email}. Keep this page open
+                    while you check.
+                  </StepHeading>
+                  <label className="form-field" htmlFor="email-code">
+                    Sign-in code
+                  </label>
+                  <InputOTP
+                    id="email-code"
+                    maxLength={6}
+                    pattern="^[0-9]*$"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    value={code}
+                    onChange={setCode}
+                  >
+                    <InputOTPGroup>
+                      {[0, 1, 2, 3, 4, 5].map((index) => (
+                        <InputOTPSlot
+                          index={index}
+                          key={index}
+                          className="otp-slot"
+                        />
+                      ))}
+                    </InputOTPGroup>
+                  </InputOTP>
+                  <Button
+                    type="button"
+                    className="secondary-action"
+                    variant="ghost"
+                    disabled={secondsLeft > 0}
+                    onClick={() => void run(sendCode)}
+                  >
+                    {secondsLeft > 0
+                      ? `Resend in ${secondsLeft}s`
+                      : 'Resend code'}
+                  </Button>
+                  <p className="field-note">
+                    For local development, emails are captured on the computer
+                    running Django; they are not delivered to a real inbox.
+                  </p>
+                </>
+              )}
+              {editingPreferences && (
+                <>
+                  <StepHeading
+                    title="Who would you like to meet?"
+                    ref={heading}
+                  >
+                    Compatibility works both ways. Gender preferences are free.
+                  </StepHeading>
+                  <PreferenceFields
+                    values={preferences}
+                    genders={catalog!.genders}
+                    onChange={setPreferences}
+                  />
+                </>
+              )}
+            </fieldset>
+            {error && (
+              <p role="alert" className="form-error">
+                {error}
+              </p>
+            )}
+            {notice && <output className="form-notice">{notice}</output>}
+            <div className="card-actions">
+              <Button
+                type="button"
+                variant="ghost"
+                className="back-button"
+                disabled={busy || (inOnboarding && step === 1)}
+                onClick={() => {
+                  setError('');
+                  setNotice('');
+                  if (editingPreferences) setScreen('ready');
+                  else if (screen === 'verify') {
+                    setCode('');
+                    setChallengeId('');
+                    setScreen(returning ? 'signin' : 'onboarding');
+                  } else if (screen === 'signin') {
+                    setScreen('onboarding');
+                    setStep(1);
+                  } else setStep(step - 1);
+                }}
+              >
+                <ArrowLeft aria-hidden="true" />{' '}
+                {editingPreferences ? 'Cancel' : 'Back'}
+              </Button>
+              <Button
+                type="submit"
+                className="continue-button"
+                disabled={busy || !canContinue}
+              >
+                {busy
+                  ? 'Please wait…'
+                  : screen === 'verify'
+                    ? 'Verify code'
+                    : editingPreferences
+                      ? 'Save preferences'
+                      : inEmail
+                        ? account
+                          ? 'Save profile'
+                          : 'Send code'
+                        : 'Continue'}
+                <ArrowRight aria-hidden="true" />
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
+      <footer className="site-footer">
+        <span>18+ only</span>
+        <span>Development preview · matching is not live</span>
+      </footer>
     </main>
   );
 }
 
-function Brand() {
-  return <div className="brand" aria-label="Unveil home"><span className="brand-mark"><Sparkles /></span><span>unveil</span><small>beta</small></div>;
+function StepHeading({
+  title,
+  children,
+  ref,
+}: {
+  title: string;
+  children: React.ReactNode;
+  ref: React.Ref<HTMLHeadingElement>;
+}) {
+  return (
+    <div className="step-heading">
+      <h2 ref={ref} tabIndex={-1}>
+        {title}
+      </h2>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+function ChoiceChips({
+  values,
+  selected,
+  onChange,
+}: {
+  values: string[];
+  selected: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="interest-grid">
+      {values.map((value) => (
+        <label
+          className={`interest-chip ${selected.includes(value) ? 'is-selected' : ''}`}
+          key={value}
+        >
+          <Checkbox
+            checked={selected.includes(value)}
+            onCheckedChange={() => onChange(value)}
+          />
+          {label(value)}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function PreferenceFields({
+  values,
+  genders,
+  onChange,
+}: {
+  values: Preferences;
+  genders: string[];
+  onChange: (value: Preferences) => void;
+}) {
+  return (
+    <div className="preference-fields">
+      <fieldset>
+        <legend>Genders you are open to in Compatible Match</legend>
+        <ChoiceChips
+          values={genders}
+          selected={values.genders}
+          onChange={(value) =>
+            onChange({
+              ...values,
+              genders: toggleChoice(values.genders, value),
+            })
+          }
+        />
+      </fieldset>
+      <div className="age-range">
+        <label className="form-field" htmlFor="min-age">
+          Minimum age
+          <Input
+            id="min-age"
+            type="number"
+            min={18}
+            max={120}
+            required
+            value={Number.isNaN(values.min_age) ? '' : values.min_age}
+            onChange={(event) =>
+              onChange({ ...values, min_age: event.target.valueAsNumber })
+            }
+          />
+        </label>
+        <label className="form-field" htmlFor="max-age">
+          Maximum age
+          <Input
+            id="max-age"
+            type="number"
+            min={values.min_age || 18}
+            max={120}
+            required
+            value={Number.isNaN(values.max_age) ? '' : values.max_age}
+            onChange={(event) =>
+              onChange({ ...values, max_age: event.target.valueAsNumber })
+            }
+          />
+        </label>
+      </div>
+      <label className="consent-row" htmlFor="open-chat-opt-in">
+        <Checkbox
+          id="open-chat-opt-in"
+          checked={values.open_chat_opt_in}
+          onCheckedChange={(value) =>
+            onChange({ ...values, open_chat_opt_in: value === true })
+          }
+        />
+        <span>Also let me use Open Chat with any gender.</span>
+      </label>
+      <p className="field-note">
+        Open Chat ignores gender preferences only when both people opt in. Age,
+        language, shared intentions, and blocks still apply. You can turn this
+        off anytime.
+      </p>
+    </div>
+  );
 }
