@@ -12,6 +12,7 @@
 
 - International audience, adults 18+, with English as the initial interface language. Friendship, conversation, and dating receive equal care, with a slight romantic emphasis.
 - Playful and youthful, balanced with mature, intimate, safety-focused interactions. The planned visual palette is white, red, black, and blue.
+- The first frontend redesign now uses this palette, Bricolage Grotesque display headings, and DM Sans body text. It includes the landing page, onboarding, returning sign-in, saved profile, and preference screens. The landing chat sample is labelled fictional; it is not an active conversation.
 - Illustrated fictional humans, animals, aliens, and other creatures. Initial character artwork will be AI-generated in a later session; the current system uses placeholder avatar identifiers.
 - Django is the backend foundation. Standard Next.js/React/TypeScript is the frontend target. The existing `web/` implementation uses Vinext and now integrates onboarding with Django locally; it is not yet an installable PWA. The prior hosted preview is not connected to the backend.
 - Implemented: email-code authentication, private account/profile separation, adult birth-date validation, matching preferences, blocks, mutual eligibility rules, and authenticated account WebSockets. Local onboarding supports profile creation after verification, returning sign-in, session-based recovery, preference editing, and logout. Character assets remain placeholders and development disclosures are not final launch policies.

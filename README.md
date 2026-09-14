@@ -10,7 +10,7 @@ The `web/` directory uses **Vinext**, React, TypeScript, and Tailwind. Its onboa
 
 Matching and person-to-person chat are not live. Those cards are explicitly unavailable, not simulated matches. The existing hosted preview has not been updated: the new integration requires a deployed Django endpoint before it can work there.
 
-The new Halfknown appearance and AI-generated character artwork are deferred. Django owns all real identity, eligibility, and safety decisions.
+The first Halfknown redesign is implemented: a white/red/black/blue theme, Bricolage Grotesque display type with DM Sans body text, a conversation-led landing page, a stepped onboarding layout, and redesigned profile/preferences screens. The landing conversation is explicitly fictional, and live matching remains unavailable. AI-generated character artwork is still deferred. Django owns all real identity, eligibility, and safety decisions.
 
 ## Run the API locally on Windows
 
@@ -104,7 +104,7 @@ backend/
   apps/moderation/        Blocking foundation
   apps/realtime/          Authenticated account event stream
   tests/                  API, privacy, eligibility, WebSocket tests
-web/                      Connected onboarding; visual redesign still pending
+web/                      Halfknown landing and connected onboarding
 docs/                     Product specification and API contract
 compose.yaml              Local full-stack services
 ```
@@ -115,6 +115,6 @@ compose.yaml              Local full-stack services
 2. Implement queue leases, availability, atomic mutual invitations, timeout/requeue, and fairness. Recheck eligibility at invitation acceptance.
 3. Implement durable text messaging, membership authorization, acknowledgements, idempotency, reconnection, pagination, and rate limits. Keep expensive work outside the message path.
 4. Add report evidence, moderator decisions, appeals, mutual continuation/reveal, and connection management before a public beta.
-5. Redesign Halfknown's UI and produce a consistent character collection.
+5. Produce the character collection and carry the Halfknown design into the forthcoming matching/chat screens. Browser visual and interaction QA remains to be performed.
 
 See [the API contract](docs/backend-api.md) and [product specification](docs/anonymous-chat-product-spec.md).

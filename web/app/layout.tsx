@@ -1,20 +1,22 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Bricolage_Grotesque, DM_Sans } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const bodyFont = DM_Sans({
+  variable: '--font-body',
   subsets: ['latin'],
 });
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const headingFont = Bricolage_Grotesque({
+  variable: '--font-display',
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: 'halfknown — Meet the mind first',
-  description: 'A personality-first way to meet, talk, and reveal yourself only when it feels mutual.',
+  title: 'halfknown — A little unknown. A lot to discover.',
+  description:
+    'A personality-first space for dating, friendship, and unexpected conversations. Create your anonymous profile in the Halfknown development preview.',
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({
@@ -25,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${bodyFont.variable} ${headingFont.variable} antialiased`}
       >
         {children}
       </body>
