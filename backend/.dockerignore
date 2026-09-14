@@ -1,0 +1,11 @@
+.venv
+.env
+.env.*
+.local-mail
+__pycache__
+*.pyc
+*.sqlite3*
+.pytest_cache
+.ruff_cache
+staticfiles
+media

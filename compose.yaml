@@ -1,0 +1,98 @@
+# Local development only. All exposed ports bind to loopback.
+name: halfknown
+
+x-backend: &backend
+  build: ./backend
+  environment: &backend-env
+    DJANGO_SETTINGS_MODULE: config.settings.local
+    DJANGO_SECRET_KEY: halfknown-local-only-never-use-in-production-2026
+    DATABASE_URL: postgres://halfknown:halfknown-dev@postgres:5432/halfknown
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+    DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost:8000
+    WS_ALLOWED_ORIGINS: http://localhost:8000
+    USE_REDIS: "True"
+    REDIS_URL: redis://redis:6379/0
+    CACHE_REDIS_URL: redis://redis:6379/1
+    CELERY_BROKER_URL: redis://redis:6379/2
+    EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+    EMAIL_HOST: mailpit
+    EMAIL_PORT: "1025"
+    EMAIL_USE_TLS: "False"
+    DEFAULT_FROM_EMAIL: Halfknown <noreply@halfknown.local>
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: halfknown
+      POSTGRES_USER: halfknown
+      POSTGRES_PASSWORD: halfknown-dev
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U halfknown -d halfknown"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  migrate:
+    <<: *backend
+    command: python manage.py migrate --noinput
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  worker:
+    <<: *backend
+    command: celery -A config worker --loglevel=WARNING --concurrency=2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  integration-tests:
+    <<: *backend
+    profiles: ["test"]
+    command: pytest -q --ds=config.settings.integration -p no:cacheprovider
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

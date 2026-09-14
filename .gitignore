@@ -1,0 +1,18 @@
+# Backend and local development
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.ruff_cache/
+.coverage
+htmlcov/
+*.sqlite3
+*.sqlite3-*
+.env
+.env.*
+!.env.example
+!**/.env.example
+backend/staticfiles/
+backend/media/
+backend/.local-mail/
