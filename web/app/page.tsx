@@ -10,7 +10,7 @@ import {
   MessageCircle,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
+  Smile,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -657,7 +657,7 @@ export default function Home() {
                       </NativeSelect>
                     </label>
                     <div className="avatar-preview">
-                      <Sparkles aria-hidden="true" />
+                      <Smile aria-hidden="true" />
                       <span>{label(draft.avatar_id)} avatar · placeholder</span>
                       <Button
                         type="button"
@@ -939,7 +939,7 @@ function ChoiceChips({
                 {value === 'dating' ? (
                   <Heart />
                 ) : value === 'flirting' ? (
-                  <Sparkles />
+                  <Smile />
                 ) : value === 'friendship' ? (
                   <MessageCircle />
                 ) : (

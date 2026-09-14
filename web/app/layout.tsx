@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Bricolage_Grotesque, DM_Sans } from 'next/font/google';
+import { Lora, DM_Sans } from 'next/font/google';
 import './globals.css';
 
 const bodyFont = DM_Sans({
@@ -7,7 +7,7 @@ const bodyFont = DM_Sans({
   subsets: ['latin'],
 });
 
-const headingFont = Bricolage_Grotesque({
+const headingFont = Lora({
   variable: '--font-display',
   subsets: ['latin'],
 });
