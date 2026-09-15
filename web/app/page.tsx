@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/native-select';
 import { Progress } from '@/components/ui/progress';
 import { Landing } from '@/components/halfknown/landing';
+import { ChatWorkspace } from '@/components/halfknown/chat-workspace';
 import {
   api,
   ApiError,
@@ -382,66 +383,17 @@ export default function Home() {
             )}
           </section>
         ) : screen === 'ready' && saved ? (
-          <section className="ready-view">
-            <div className="ready-copy">
-              <span className="eyebrow">
-                <Check aria-hidden="true" /> Profile saved
-              </span>
-              <h1 ref={heading} tabIndex={-1}>
-                A little more known.
-                <br />
-                <span className="dashboard-alias">
-                  Hello, {saved.profile.alias}.
-                </span>
-              </h1>
-              <p>
-                Your email is verified and your profile is saved. Matching and
-                messaging are still being built.
-              </p>
-              <div className="account-summary">
-                {saved.profile.interests.map((interest) => (
-                  <span key={interest}>{label(interest)}</span>
-                ))}
-              </div>
-              {notice && <output>{notice}</output>}
-              {error && <p role="alert">{error}</p>}
-            </div>
-            <div className="mode-grid">
-              <div className="mode-card mode-card-open">
-                <span className="mode-index">01 / A little spontaneous</span>
-                <MessageCircle aria-hidden="true" />
-                <h2 className="mode-title">Open Chat</h2>
-                <p className="mode-description">
-                  A conversation with any mutually eligible adult who has also
-                  opted in.
-                </p>
-                <span className="mode-status">Not available yet</span>
-              </div>
-              <div className="mode-card mode-card-match">
-                <span className="mode-index">02 / A little intentional</span>
-                <Heart aria-hidden="true" />
-                <h2 className="mode-title">Compatible Match</h2>
-                <p className="mode-description">
-                  Introductions that respect both people’s matching preferences.
-                </p>
-                <span className="mode-status">Not available yet</span>
-              </div>
-            </div>
-            <Button
-              className="edit-profile"
-              variant="ghost"
-              onClick={() => {
-                setPreferences({
-                  ...saved.preferences,
-                  genders: [...saved.preferences.genders],
-                });
-                setScreen('preferences');
-                setNotice('');
-              }}
-            >
-              Edit matching preferences
-            </Button>
-          </section>
+          <ChatWorkspace
+            saved={saved}
+            onPreferences={() => {
+              setPreferences({
+                ...saved.preferences,
+                genders: [...saved.preferences.genders],
+              });
+              setScreen('preferences');
+              setNotice('');
+            }}
+          />
         ) : (
           <section className="onboarding-layout">
             <aside className="story-panel">

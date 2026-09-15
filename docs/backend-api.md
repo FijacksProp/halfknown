@@ -1,6 +1,6 @@
 # Halfknown backend foundation
 
-Status: backend APIs and local frontend onboarding integration implemented. No live matching queue or person-to-person chat yet. Hosted integration is pending a deployed Django endpoint.
+Status: onboarding, matching queues, two-party invitations, text chat, block/report, and the local frontend integration are implemented. See [Live chat](live-chat.md) for the contract and limitations. Hosted integration is pending a deployed Django endpoint.
 
 ## Architecture decision
 
@@ -112,11 +112,11 @@ Birth-date changes after initial completion are rejected pending a future suppor
 - Compatible mode: mutual gender preferences
 - Open mode: both expressly opted in to any-gender chat
 
-This is a rules service, not a matching engine. Location filtering is intentionally absent until a location preference/storage policy is implemented. Availability, queue fairness, invitation reservations, capacity limits, and final eligibility rechecks are the next milestone. The queue must fetch current records instead of relying on stale model instances.
+This rules service now feeds the matching queue described in [Live chat](live-chat.md). The queue fetches current records, reserves one introduction per user, and rechecks eligibility before acceptance and new messages. Location filtering remains absent pending a location preference/storage policy; production-scale fairness and capacity testing are still pending.
 
 ## Blocking
 
-POST `/api/v1/blocks/` with `{"profile_id":"<UUID>"}`. Returns 204 even if the block already exists. Self-blocking is rejected. Eligibility excludes the pair in both directions. Chat does not exist yet; its read/send handlers must enforce the same block before launch.
+POST `/api/v1/blocks/` with `{"profile_id":"<UUID>"}`. Returns 204 even if the block already exists. Self-blocking is rejected. Blocking ends any active introduction between the pair and disqualifies future matching in both directions. New messages are rejected; participants retain access to their existing conversation evidence. Chat-scoped block/report endpoints avoid exposing peer account IDs.
 
 ## WebSocket contract
 
@@ -133,7 +133,7 @@ await channel_layer.group_send(f"account.{user.pk.hex}", {
 })
 ```
 
-Session validity is rechecked on incoming/outgoing events and every 30 seconds while idle. This is a transport foundation, not typing/presence/chat implementation. Per-connection message throttles and load testing remain before public traffic.
+Session validity is rechecked on incoming/outgoing events and every 30 seconds while idle. Matching and chat publish invalidation and typing events through this stream; authorized HTTP requests own durable writes and history recovery. Per-connection ping throttles and load testing remain before public traffic.
 
 ## Validation and limits
 

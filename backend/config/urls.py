@@ -3,7 +3,8 @@ from django.http import JsonResponse
 from django.urls import path
 
 from apps.accounts.views import CsrfView, LogoutView, MeView, RequestCodeView, VerifyCodeView
-from apps.moderation.views import BlockView
+from apps.matching.views import AcceptView, HeartbeatView, MessagesView, QueueView, TypingView
+from apps.moderation.views import BlockView, ChatSafetyView
 from apps.profiles.views import CatalogView, IdentityPreviewView, PreferencesView, ProfileView
 
 
@@ -26,6 +27,13 @@ urlpatterns = [
     path("api/v1/profile/", ProfileView.as_view()),
     path("api/v1/preferences/", PreferencesView.as_view()),
     path("api/v1/blocks/", BlockView.as_view()),
+    path("api/v1/matching/queue/", QueueView.as_view()),
+    path("api/v1/matching/heartbeat/", HeartbeatView.as_view()),
+    path("api/v1/chats/<uuid:chat_id>/accept/", AcceptView.as_view()),
+    path("api/v1/chats/<uuid:chat_id>/messages/", MessagesView.as_view()),
+    path("api/v1/chats/<uuid:chat_id>/typing/", TypingView.as_view()),
+    path("api/v1/chats/<uuid:chat_id>/block/", ChatSafetyView.as_view(), {"action": "block"}),
+    path("api/v1/chats/<uuid:chat_id>/report/", ChatSafetyView.as_view(), {"action": "report"}),
 ]
 admin.site.site_header = "Halfknown administration"
 admin.site.site_title = "Halfknown"

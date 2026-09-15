@@ -34,7 +34,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async ({ mode }) => {
+export default defineConfig(async ({ mode, command, isPreview }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const apiTarget = env.DJANGO_API_TARGET || 'http://127.0.0.1:8000';
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
@@ -64,10 +64,14 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       vinext(),
       sites(),
-      cloudflare({
-        viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
-        config: localBindingConfig,
-      }),
+      // Django owns /ws/. The Workers emulator also intercepts every non-HMR
+      // upgrade, causing two handlers to claim the same socket and redirect-loop.
+      // Use Vinext's Node dev runtime locally; retain Worker output for hosting.
+      (command === 'build' || isPreview) &&
+        cloudflare({
+          viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
+          config: localBindingConfig,
+        }),
     ],
   };
 });

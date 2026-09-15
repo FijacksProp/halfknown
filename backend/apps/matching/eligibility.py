@@ -6,7 +6,7 @@ from apps.profiles.catalog import age_on
 
 
 def eligible(left, right, *, mode, intention, today=None):
-    """Mutual hard filters only. Availability/reservations belong to the future queue service."""
+    """Mutual hard filters only. Availability/reservations belong to the queue service."""
     if mode not in {"open", "compatible"} or left.pk == right.pk:
         return False
     for user in (left, right):

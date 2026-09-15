@@ -76,5 +76,8 @@ class MeView(APIView):
 
 class LogoutView(APIView):
     def post(self, request):
+        from apps.matching.services import leave
+
+        leave(request.user)
         logout(request)
         return Response(status=204)

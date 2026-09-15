@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
+from apps.matching.services import leave, match_lock
 
 from .catalog import AVATARS, GENDERS, INTENTIONS, INTERESTS, STYLES
 from .models import MatchPreferences, PrivateProfile, Profile, new_alias
@@ -64,13 +65,14 @@ class ProfileView(APIView):
         policy_version = values.pop("policy_version")
         values.pop("accepted_terms")
         values.pop("accepted_guidelines")
-        with transaction.atomic():
+        with match_lock(), transaction.atomic():
             user = User.objects.select_for_update().get(pk=request.user.pk)
             if create_only and Profile.objects.filter(user=user).exists():
                 return Response({"detail": "Your profile already exists. Reload it to continue."}, status=409)
             private = PrivateProfile.objects.filter(user=user).first()
             if private and private.birth_date != birth_date:
                 raise ValidationError({"birth_date": "Contact support to correct your birth date."})
+            leave(user)
             PrivateProfile.objects.get_or_create(
                 user=user,
                 defaults={
@@ -92,5 +94,7 @@ class PreferencesView(APIView):
             return Response({"detail": "Complete onboarding first."}, status=409)
         data = PreferenceInput(data=request.data)
         data.is_valid(raise_exception=True)
-        prefs, _ = MatchPreferences.objects.update_or_create(user=request.user, defaults=data.validated_data)
+        with match_lock():
+            leave(request.user)
+            prefs, _ = MatchPreferences.objects.update_or_create(user=request.user, defaults=data.validated_data)
         return Response(PreferencesOutput(prefs).data)

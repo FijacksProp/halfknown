@@ -27,6 +27,33 @@ export type Profile = {
 };
 
 export type SavedProfile = { profile: Profile; preferences: Preferences };
+export type MatchMode = 'open' | 'compatible';
+export type Chat = {
+  state: 'invited' | 'active' | 'ended';
+  id: string;
+  mode: MatchMode;
+  intention: string;
+  accepted: boolean;
+  expires_at: string;
+  end_reason: string;
+  peer: { alias: string; avatar_id: string; shared_interests: string[] };
+};
+export type MatchState =
+  | { state: 'idle' }
+  | { state: 'waiting'; mode: MatchMode; intention: string }
+  | Chat;
+export type ChatMessage = {
+  id: number;
+  client_id: string;
+  body: string;
+  mine: boolean;
+  created_at: string;
+};
+export type MessagePage = {
+  messages: ChatMessage[];
+  has_more: boolean;
+  conversation: Chat;
+};
 export type Account = {
   id: string;
   email: string;
@@ -116,6 +143,22 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
     return data as T;
   }
   return {
+    heartbeat: () => request<MatchState>('/matching/heartbeat/', 'POST'),
+    joinQueue: (mode: MatchMode, intention: string) =>
+      request<MatchState>('/matching/queue/', 'POST', { mode, intention }),
+    leaveChat: () => request<void>('/matching/queue/', 'DELETE'),
+    acceptChat: (id: string) => request<Chat>(`/chats/${id}/accept/`, 'POST'),
+    messages: (id: string, after = 0) =>
+      request<MessagePage>(`/chats/${id}/messages/?after=${after}`),
+    sendMessage: (id: string, client_id: string, body: string) =>
+      request<ChatMessage>(`/chats/${id}/messages/`, 'POST', {
+        client_id,
+        body,
+      }),
+    typing: (id: string) => request<void>(`/chats/${id}/typing/`, 'POST'),
+    blockChat: (id: string) => request<void>(`/chats/${id}/block/`, 'POST'),
+    reportChat: (id: string, reason: string, details: string) =>
+      request<void>(`/chats/${id}/report/`, 'POST', { reason, details }),
     catalog: () => request<Catalog>('/catalog/'),
     preview: () =>
       request<{ alias: string; avatar_id: string }>('/identity-preview/'),

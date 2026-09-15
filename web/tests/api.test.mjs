@@ -14,6 +14,52 @@ function harness(responses) {
 }
 const json = (body, status = 200) => Response.json(body, { status });
 
+test('chat commands use session-bound CSRF writes and exact conversation endpoints', async () => {
+  const { api, calls } = harness(
+    Array.from({ length: 8 }, () => [
+      json({ csrf_token: 'chat-token' }),
+      json({ state: 'idle' }),
+    ]).flat(),
+  );
+  await api.joinQueue('compatible', 'dating');
+  await api.heartbeat();
+  await api.acceptChat('chat-id');
+  await api.sendMessage('chat-id', 'retry-id', 'Hello');
+  await api.typing('chat-id');
+  await api.blockChat('chat-id');
+  await api.reportChat('chat-id', 'spam', 'Review this');
+  await api.leaveChat();
+  assert.equal(calls.length, 16);
+  assert.equal(calls[1].url, '/api/v1/matching/queue/');
+  assert.deepEqual(JSON.parse(calls[1].body), {
+    mode: 'compatible',
+    intention: 'dating',
+  });
+  assert.equal(calls[7].url, '/api/v1/chats/chat-id/messages/');
+  assert.deepEqual(JSON.parse(calls[7].body), {
+    client_id: 'retry-id',
+    body: 'Hello',
+  });
+  assert.equal(calls[13].url, '/api/v1/chats/chat-id/report/');
+  assert.equal(calls[15].method, 'DELETE');
+  for (let index = 1; index < calls.length; index += 2)
+    assert.equal(calls[index].headers.get('X-CSRFToken'), 'chat-token');
+});
+
+test('message recovery uses a cursor and does not replay failed writes', async () => {
+  const { api, calls } = harness([
+    json({ messages: [], has_more: false }),
+    json({ csrf_token: 't' }),
+    json({ detail: 'Conversation ended.' }, 400),
+  ]);
+  await api.messages('chat-id', 17);
+  assert.equal(calls[0].url, '/api/v1/chats/chat-id/messages/?after=17');
+  await assert.rejects(api.sendMessage('chat-id', 'same-id', 'Hello'), {
+    status: 400,
+  });
+  assert.equal(calls.length, 3);
+});
+
 test('all writes use fresh CSRF, including token rotation after verification', async () => {
   const { api, calls } = harness([
     json({ csrf_token: 'before-login' }),

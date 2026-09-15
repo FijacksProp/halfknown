@@ -79,7 +79,10 @@ export function Landing({
       </section>
       <div className="preview-ribbon">
         <span className="ribbon-label">A WORK IN PROGRESS</span>
-        <p>Make your profile today. Live matching and chat are coming next.</p>
+        <p>
+          Create a profile, accept an introduction, and try text chat in the
+          local preview.
+        </p>
         <a href="#how-it-works">
           Get to know halfknown <ArrowDown aria-hidden="true" />
         </a>
@@ -123,8 +126,9 @@ export function Landing({
             <div>
               <h3>Meet when you’re ready.</h3>
               <p>
-                Planned next: Open Chat and Compatible Match. Both will respect
-                mutual preferences, age boundaries, and blocks.
+                Choose Open Chat or Compatible Match. Accept an introduction
+                together before you chat. Age boundaries and blocks always
+                apply.
               </p>
             </div>
           </li>

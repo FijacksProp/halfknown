@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.profiles",
     "apps.moderation",
+    "apps.matching",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -110,6 +111,7 @@ REST_FRAMEWORK = {
         "user": "180/min",
         "auth_request": "10/hour",
         "auth_verify": "30/hour",
+        "typing": "30/min",
     },
     "NUM_PROXIES": 0,
 }
