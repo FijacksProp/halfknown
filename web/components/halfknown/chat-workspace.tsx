@@ -52,9 +52,9 @@ export function ChatWorkspace({
   const [loaded, setLoaded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
-  const [safety, setSafety] = useState<'leave' | 'block' | 'report' | null>(
-    null,
-  );
+  const [safety, setSafety] = useState<
+    'leave' | 'next' | 'block' | 'report' | null
+  >(null);
   const [reason, setReason] = useState('harassment');
   const [details, setDetails] = useState('');
   const [now, setNow] = useState(() => Date.now());
@@ -113,6 +113,8 @@ export function ChatWorkspace({
           setState(page.conversation);
         }
       } else {
+        currentChat.current = null;
+        cursor.current = 0;
         setState(next);
       }
       setLoaded(true);
@@ -275,6 +277,19 @@ export function ChatWorkspace({
       } else if (selected === 'block' && chat) {
         await api.blockChat(chat.id);
         setNotice('This person is now blocked.');
+      } else if (selected === 'next' && chat) {
+        const result = await api.nextPerson(chat.id);
+        currentChat.current = null;
+        cursor.current = 0;
+        pending.current = null;
+        setMessages([]);
+        setDraft('');
+        setState(result);
+        setNotice(
+          'Looking for another introduction with the same preferences.',
+        );
+        setSafety(null);
+        return;
       } else await api.leaveChat();
       setSafety(null);
       setDetails('');
@@ -297,13 +312,13 @@ export function ChatWorkspace({
           <h1 id="chat-title">Who will you meet?</h1>
         </div>
         <output className="connection-status">
-          {connected ? 'Live updates connected' : 'Reconnecting live updates…'}
+          {connected ? 'Connected' : 'Reconnecting…'}
         </output>
       </div>
       <p className="chat-privacy">
         <ShieldCheck size={18} aria-hidden="true" />
-        18+ development preview. Messages are stored on the server, not
-        end-to-end encrypted. Reports share the latest 20 messages with staff.
+        18+ only. Messages are stored on the server, not end-to-end encrypted.
+        Reports share the latest 20 messages with staff.
       </p>
       {error && (
         <div className="form-error" role="alert">
@@ -416,7 +431,7 @@ export function ChatWorkspace({
               })
             }
           >
-            Cancel search
+            Stop searching
           </Button>
         </div>
       )}
@@ -451,9 +466,28 @@ export function ChatWorkspace({
             <Button
               variant="outline"
               disabled={busy}
+              onClick={() =>
+                void action(async () => {
+                  const result = await api.declineChat(state.id);
+                  currentChat.current = null;
+                  cursor.current = 0;
+                  setMessages([]);
+                  setDraft('');
+                  setState(result);
+                  setNotice(
+                    'Looking for another introduction with the same preferences.',
+                  );
+                })
+              }
+            >
+              Decline &amp; keep searching
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={busy}
               onClick={() => setSafety('leave')}
             >
-              Decline
+              Stop searching
             </Button>
           </div>
         </div>
@@ -471,6 +505,11 @@ export function ChatWorkspace({
               </span>
             </div>
             <div className="chat-actions">
+              {state.state === 'active' && (
+                <Button disabled={busy} onClick={() => setSafety('next')}>
+                  Next person
+                </Button>
+              )}
               {state.state === 'active' && (
                 <Button
                   variant="outline"
@@ -506,7 +545,9 @@ export function ChatWorkspace({
           >
             {messages.length === 0 && (
               <p className="message-empty">
-                You both said yes. Say hello when you’re ready.
+                {state.state === 'active'
+                  ? 'You both said yes. Say hello when you’re ready.'
+                  : 'No messages were exchanged.'}
               </p>
             )}
             {messages.length >= 500 && (
@@ -600,14 +641,18 @@ export function ChatWorkspace({
                 ? 'Report and block this person?'
                 : safety === 'block'
                   ? 'Block this person?'
-                  : 'End this introduction?'}
+                  : safety === 'next'
+                    ? 'Meet someone else?'
+                    : 'Leave and stop searching?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {safety === 'report'
                 ? 'Your report includes the latest 20 messages and the details below. Staff can review it. The conversation ends and you won’t match with this person again.'
                 : safety === 'block'
                   ? 'The conversation ends and neither of you can match with the other again.'
-                  : 'Both people will be released. You can look for another introduction afterwards.'}
+                  : safety === 'next'
+                    ? 'This conversation will end and we’ll search again using the same mode and intention.'
+                    : 'This conversation will end. You won’t be placed back in the queue.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {safety === 'report' && (
@@ -657,7 +702,9 @@ export function ChatWorkspace({
                   ? 'Submit report and block'
                   : safety === 'block'
                     ? 'Block person'
-                    : 'Leave'}
+                    : safety === 'next'
+                      ? 'Next person'
+                      : 'Leave'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

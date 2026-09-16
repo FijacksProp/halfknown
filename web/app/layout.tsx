@@ -15,7 +15,7 @@ const headingFont = Lora({
 export const metadata: Metadata = {
   title: 'halfknown — A little unknown. A lot to discover.',
   description:
-    'A personality-first space for dating, friendship, and unexpected conversations. Create your anonymous profile in the Halfknown development preview.',
+    'A personality-first space for dating, friendship, and unexpected conversations. Meet someone new while keeping your identity private.',
   icons: { icon: '/favicon.svg' },
 };
 

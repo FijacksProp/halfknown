@@ -320,7 +320,7 @@ export default function Home() {
         {screen === 'landing' && (
           <nav className="top-nav" aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
-            <span className="preview-label">Early preview</span>
+            <span className="preview-label">For adults, 18+</span>
           </nav>
         )}
         {account ? (
@@ -446,9 +446,9 @@ export default function Home() {
               <div className="safety-callout">
                 <ShieldCheck aria-hidden="true" />
                 <span>
-                  <strong>A safe start is a good start.</strong>This is a
-                  development preview for adults. Use test details; live chat
-                  and final launch policies are still on the way.
+                  <strong>Your identity stays yours.</strong>Your email and
+                  birth date are never shown to a match. Share personal details
+                  only when you choose.
                 </span>
               </div>
             </aside>
@@ -610,7 +610,7 @@ export default function Home() {
                     </label>
                     <div className="avatar-preview">
                       <Smile aria-hidden="true" />
-                      <span>{label(draft.avatar_id)} avatar · placeholder</span>
+                      <span>{label(draft.avatar_id)} identity</span>
                       <Button
                         type="button"
                         variant="ghost"
@@ -668,24 +668,46 @@ export default function Home() {
                     {inOnboarding && (
                       <>
                         <details className="policy-details">
-                          <summary>
-                            Read the development terms and guidelines
-                          </summary>
+                          <summary>Privacy and community guidelines</summary>
                           <p>
-                            This preview is for testing with non-sensitive
-                            details, not for live introductions. Sign-in stores
-                            your email. Saving a profile stores your birth date
-                            privately, plus your chosen interests and matching
-                            preferences. Sign out on shared devices. Unsaved
-                            choices are lost on refresh.
+                            We use your email for sign-in. Saving a profile
+                            stores your birth date privately, plus your chosen
+                            interests and matching preferences. Sign out on
+                            shared devices. Unsaved choices are lost on refresh.
                           </p>
                           <p>
                             Adults only. Do not impersonate others, harass,
-                            threaten, scam, or submit explicit content. Final
-                            privacy, retention, and community policies must be
-                            approved before public launch.
+                            threaten, scam, or submit explicit content. Messages
+                            are stored on our servers, not end-to-end encrypted.
+                            Reporting shares the latest 20 messages with staff.
                           </p>
-                          <p>Policy version: {catalog!.policy_version}</p>
+                          {catalog?.policies?.terms && (
+                            <p>
+                              <a
+                                href={catalog.policies.terms}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Terms of service
+                              </a>
+                              {' · '}
+                              <a
+                                href={catalog.policies.privacy}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Privacy policy
+                              </a>
+                              {' · '}
+                              <a
+                                href={catalog.policies.guidelines}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Community guidelines
+                              </a>
+                            </p>
+                          )}
                         </details>
                         <label className="consent-row" htmlFor="accept-terms">
                           <Checkbox
@@ -696,7 +718,9 @@ export default function Home() {
                             }
                           />
                           <span>
-                            I have read and accept the development terms above.
+                            {catalog?.policies?.terms
+                              ? 'I agree to the Terms of Service and acknowledge the Privacy Policy linked above.'
+                              : 'I understand the data practices described above.'}
                           </span>
                         </label>
                         <label
@@ -759,8 +783,8 @@ export default function Home() {
                         : 'Resend code'}
                     </Button>
                     <p className="field-note">
-                      For local development, emails are captured on the computer
-                      running Django; they are not delivered to a real inbox.
+                      Check your spam folder too. Never share your sign-in code
+                      with anyone.
                     </p>
                   </>
                 )}
@@ -836,7 +860,7 @@ export default function Home() {
       <footer className="site-footer">
         <span className="footer-wordmark">halfknown.</span>
         <span>A little unknown. A lot to discover.</span>
-        <small>18+ · Development preview</small>
+        <small>18+ · Your boundaries come first</small>
       </footer>
     </main>
   );

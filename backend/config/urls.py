@@ -3,9 +3,10 @@ from django.http import JsonResponse
 from django.urls import path
 
 from apps.accounts.views import CsrfView, LogoutView, MeView, RequestCodeView, VerifyCodeView
-from apps.matching.views import AcceptView, HeartbeatView, MessagesView, QueueView, TypingView
+from apps.matching.views import AcceptView, HeartbeatView, MessagesView, NextPersonView, QueueView, TypingView
 from apps.moderation.views import BlockView, ChatSafetyView
 from apps.profiles.views import CatalogView, IdentityPreviewView, PreferencesView, ProfileView
+from config.health import ready
 
 
 def health(request):
@@ -16,6 +17,7 @@ def health(request):
 
 urlpatterns = [
     path("health/", health),
+    path("health/ready/", ready),
     path("admin/", admin.site.urls),
     path("api/v1/auth/csrf/", CsrfView.as_view()),
     path("api/v1/auth/request-code/", RequestCodeView.as_view()),
@@ -30,6 +32,8 @@ urlpatterns = [
     path("api/v1/matching/queue/", QueueView.as_view()),
     path("api/v1/matching/heartbeat/", HeartbeatView.as_view()),
     path("api/v1/chats/<uuid:chat_id>/accept/", AcceptView.as_view()),
+    path("api/v1/chats/<uuid:chat_id>/decline/", NextPersonView.as_view(), {"decline": True}),
+    path("api/v1/chats/<uuid:chat_id>/next/", NextPersonView.as_view()),
     path("api/v1/chats/<uuid:chat_id>/messages/", MessagesView.as_view()),
     path("api/v1/chats/<uuid:chat_id>/typing/", TypingView.as_view()),
     path("api/v1/chats/<uuid:chat_id>/block/", ChatSafetyView.as_view(), {"action": "block"}),

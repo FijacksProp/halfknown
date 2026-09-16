@@ -19,6 +19,8 @@ from .models import Conversation, MatchGate, MatchSlot, Message
 
 log = logging.getLogger(__name__)
 LEASE_SECONDS = 90
+PRESENT_SECONDS = 30
+REMATCH_COOLDOWN = timedelta(minutes=10)
 
 
 @contextmanager
@@ -48,12 +50,26 @@ def notify(user_ids, payload=None):
     transaction.on_commit(publish)
 
 
-def end_chat(chat, reason):
+def end_chat(chat, reason, *, requeue=()):
     if chat.status == "ended":
         return
-    chat.status, chat.end_reason, chat.ended_at = "ended", reason, timezone.now()
+    now = timezone.now()
+    slots = list(MatchSlot.objects.filter(conversation=chat))
+    chat.status, chat.end_reason, chat.ended_at = "ended", reason, now
     chat.save(update_fields=["status", "end_reason", "ended_at"])
     MatchSlot.objects.filter(conversation=chat).delete()
+    for slot in slots:
+        if slot.user_id not in requeue or slot.expires_at <= now + timedelta(
+            seconds=LEASE_SECONDS - PRESENT_SECONDS
+        ):
+            continue
+        try:
+            queue_valid(fresh_user(slot.user_id), slot.mode, slot.intention)
+        except ValidationError:
+            continue
+        MatchSlot.objects.create(
+            user_id=slot.user_id, mode=slot.mode, intention=slot.intention, expires_at=slot.expires_at
+        )
     notify([chat.first_id, chat.second_id])
 
 
@@ -65,7 +81,19 @@ def sweep():
     for chat in Conversation.objects.filter(
         Q(pk__in=ids) | Q(status="invited", invitation_expires_at__lte=now)
     ).exclude(status="ended"):
-        end_chat(chat, "expired" if chat.status == "invited" else "disconnected")
+        if chat.status == "invited":
+            # Only an accepted invitation and recent presence authorize resuming.
+            continuing = [
+                uid
+                for uid, accepted in (
+                    (chat.first_id, chat.first_accepted),
+                    (chat.second_id, chat.second_accepted),
+                )
+                if accepted
+            ]
+            end_chat(chat, "expired", requeue=continuing)
+        else:
+            end_chat(chat, "disconnected")
 
 
 def fresh_user(uid):
@@ -106,10 +134,14 @@ def chat_eligible(chat):
 def try_pair(slot):
     user = fresh_user(slot.user_id)
     queue_valid(user, slot.mode, slot.intention)
+    recent = Conversation.objects.filter(ended_at__gt=timezone.now() - REMATCH_COOLDOWN)
+    excluded = set(recent.filter(first=user).values_list("second_id", flat=True))
+    excluded.update(recent.filter(second=user).values_list("first_id", flat=True))
     # Bounded FIFO candidate band. Random for Open Chat; shared interests rank Compatible.
     candidates = list(
         MatchSlot.objects.filter(conversation=None, mode=slot.mode, intention=slot.intention)
         .exclude(user=user)
+        .exclude(user_id__in=excluded)
         .select_related("user__profile", "user__private_profile", "user__preferences")
         .order_by("joined_at")[:200]
     )
@@ -210,6 +242,28 @@ def leave(user):
         elif slot:
             slot.delete()
         notify([user.pk])
+
+
+def next_person(user, chat_id, *, decline=False):
+    with match_lock():
+        sweep()
+        chat = chat_for(user, chat_id)
+        # A stale request cannot end a newer chat or restart an explicitly stopped search.
+        if chat.status == "ended":
+            return snapshot(user)
+        expected = "invited" if decline else "active"
+        if chat.status != expected:
+            raise ValidationError("This introduction has changed. Refresh to continue.")
+        MatchSlot.objects.filter(user=user, conversation=chat).update(
+            expires_at=timezone.now() + timedelta(seconds=LEASE_SECONDS)
+        )
+        continuing = [chat.first_id, chat.second_id] if decline else [user.pk]
+        end_chat(chat, "declined" if decline else "next", requeue=continuing)
+        for uid in continuing:
+            slot = MatchSlot.objects.filter(user_id=uid, conversation=None).first()
+            if slot:
+                try_pair(slot)
+        return snapshot(user)
 
 
 def accept(user, chat_id):

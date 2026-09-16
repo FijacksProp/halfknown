@@ -90,13 +90,17 @@ EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 EMAIL_TIMEOUT = 10
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Halfknown <noreply@localhost>")
 OTP_TTL_SECONDS = 600
 OTP_MAX_ATTEMPTS = 5
 OTP_RESEND_SECONDS = 60
 OTP_MAX_SENDS_PER_HOUR = 5
-POLICY_VERSION = "development-draft-1"
+POLICY_VERSION = env("POLICY_VERSION", default="development-draft-1")
+TERMS_URL = env("TERMS_URL", default="")
+PRIVACY_URL = env("PRIVACY_URL", default="")
+GUIDELINES_URL = env("GUIDELINES_URL", default="")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.CsrfSessionAuthentication"],

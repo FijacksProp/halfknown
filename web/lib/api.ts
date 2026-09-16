@@ -5,6 +5,7 @@ export type Catalog = {
   avatars: string[];
   styles: string[];
   policy_version: string;
+  policies: { terms: string; privacy: string; guidelines: string };
 };
 
 export type Preferences = {
@@ -148,6 +149,10 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
       request<MatchState>('/matching/queue/', 'POST', { mode, intention }),
     leaveChat: () => request<void>('/matching/queue/', 'DELETE'),
     acceptChat: (id: string) => request<Chat>(`/chats/${id}/accept/`, 'POST'),
+    declineChat: (id: string) =>
+      request<MatchState>(`/chats/${id}/decline/`, 'POST'),
+    nextPerson: (id: string) =>
+      request<MatchState>(`/chats/${id}/next/`, 'POST'),
     messages: (id: string, after = 0) =>
       request<MessagePage>(`/chats/${id}/messages/?after=${after}`),
     sendMessage: (id: string, client_id: string, body: string) =>

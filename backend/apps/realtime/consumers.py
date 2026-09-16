@@ -1,5 +1,7 @@
 import asyncio
+from collections import deque
 from contextlib import suppress
+from time import monotonic
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -13,6 +15,7 @@ class AccountConsumer(AsyncJsonWebsocketConsumer):
     """Private event stream. No client may publish an invitation or claim a match."""
 
     async def connect(self):
+        self.received_at = deque()
         self.watchdog = None
         self.group_name = None
         self.user = self.scope["user"]
@@ -42,6 +45,13 @@ class AccountConsumer(AsyncJsonWebsocketConsumer):
                 return
 
     async def receive(self, text_data=None, bytes_data=None, **kwargs):
+        now = monotonic()
+        while self.received_at and self.received_at[0] < now - 10:
+            self.received_at.popleft()
+        if len(self.received_at) >= 20:
+            await self.close(code=4429)
+            return
+        self.received_at.append(now)
         if bytes_data is not None or (text_data and len(text_data.encode("utf-8")) > 1024):
             await self.close(code=4400)
             return

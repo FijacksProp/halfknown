@@ -7,10 +7,12 @@ This implements a local, text-only match-to-chat flow. It is not a public-launch
 1. Sign in with a verified email and complete an adult profile.
 2. Pick an intention from your profile, then Open Chat or Compatible Match.
 3. The server reserves two mutually eligible users. Each must accept within 45 seconds.
-4. Once both accept, send text messages. Leaving, blocking, reporting, signing out, or editing preferences ends the introduction for both people.
+4. Once both accept, send text messages. **Next person** ends the chat and resumes the initiator's search with the same mode/intention. **Leave** stops searching. Blocking, reporting, signing out, or editing preferences ends the introduction without automatic requeue.
 5. A 10-second frontend heartbeat renews a 90-second server lease. Closing the page or losing both HTTP and WebSocket connectivity expires the lease. A short WebSocket interruption alone does not end the chat; HTTP resync remains available.
 
-Open Chat requires both explicit opt-ins and ignores gender filters only. Both modes enforce verified/active accounts, adult ages, mutual age ranges, shared language, the selected intention, and bidirectional blocks. Compatible Match also enforces mutual gender preferences, then ranks candidates by shared interests. Selection is random among equally ranked candidates in a bounded 200-person FIFO band. There is no demographic paywall, fabricated user, estimated wait promise, or automatic relaxation of preferences. Ended introductions impose a three-second requeue delay.
+Open Chat requires both explicit opt-ins and ignores gender filters only. Both modes enforce verified/active accounts, adult ages, mutual age ranges, shared language, the selected intention, and bidirectional blocks. Compatible Match also enforces mutual gender preferences, then ranks candidates by shared interests. Selection is random among equally ranked candidates in a bounded 200-person FIFO band. There is no demographic paywall, fabricated user, estimated wait promise, or automatic relaxation of preferences.
+
+Declining an invitation automatically resumes both searches when each person was seen within 30 seconds. Invitation timeout resumes only someone who accepted and was recently present; a nonresponding person is paused. Any pair whose conversation ended is excluded from rematching for ten minutes across both modes. Explicitly starting again from the mode picker still has a three-second delay; automatic decline/next requeue does not. Stale or duplicate actions are scoped to the old conversation and cannot cancel a newer match or undo a later stop.
 
 ## API
 
@@ -22,6 +24,8 @@ All paths below start with `/api/v1`. Existing session authentication and CSRF r
 | DELETE | `/matching/queue/` | Cancel a queue entry or end the current introduction |
 | POST | `/matching/heartbeat/` | Renew lease, clean stale reservations, and return current state |
 | POST | `/chats/<uuid>/accept/` | Idempotent acceptance; both people must accept |
+| POST | `/chats/<uuid>/decline/` | Decline an invitation and resume recently present participants' searches |
+| POST | `/chats/<uuid>/next/` | End an active chat and resume only the initiating participant's search |
 | GET | `/chats/<uuid>/messages/?after=<integer>` | Up to 100 messages, `has_more`, current conversation; participants only |
 | POST | `/chats/<uuid>/messages/` | `{client_id: UUID, body}`; maximum 2,000 characters, no blank messages |
 | POST | `/chats/<uuid>/typing/` | Notify the other participant; 30/minute throttle |

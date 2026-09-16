@@ -27,6 +27,8 @@ class CatalogView(APIView):
                 "avatars": AVATARS,
                 "styles": STYLES,
                 "policy_version": settings.POLICY_VERSION,
+                "policies": {"terms": settings.TERMS_URL, "privacy": settings.PRIVACY_URL,
+                             "guidelines": settings.GUIDELINES_URL},
             }
         )
 

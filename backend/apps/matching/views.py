@@ -72,3 +72,8 @@ class TypingView(APIView):
     def post(self, request, chat_id):
         services.typing(request.user, chat_id)
         return Response(status=204)
+
+
+class NextPersonView(APIView):
+    def post(self, request, chat_id, decline=False):
+        return Response(services.next_person(request.user, chat_id, decline=decline))

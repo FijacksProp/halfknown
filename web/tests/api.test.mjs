@@ -14,6 +14,21 @@ function harness(responses) {
 }
 const json = (body, status = 200) => Response.json(body, { status });
 
+test('decline and next preserve server-owned requeue state', async () => {
+  const waiting = { state: 'waiting', mode: 'compatible', intention: 'dating' };
+  const { api, calls } = harness([
+    json({ csrf_token: 't' }),
+    json(waiting),
+    json({ csrf_token: 't' }),
+    json(waiting),
+  ]);
+  assert.deepEqual(await api.declineChat('old-chat'), waiting);
+  assert.deepEqual(await api.nextPerson('old-chat'), waiting);
+  assert.equal(calls[1].url, '/api/v1/chats/old-chat/decline/');
+  assert.equal(calls[3].url, '/api/v1/chats/old-chat/next/');
+  assert.equal(calls[1].method, 'POST');
+});
+
 test('chat commands use session-bound CSRF writes and exact conversation endpoints', async () => {
   const { api, calls } = harness(
     Array.from({ length: 8 }, () => [

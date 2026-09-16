@@ -90,6 +90,66 @@ def test_idempotent_queue_and_no_double_pairing(people):
     assert MatchSlot.objects.count() == 3
 
 
+def test_decline_preserves_both_searches_and_avoids_repeat_pair(people):
+    chat_id = pair(people, active=False)
+    a, b, c = [p[1] for p in people]
+    response = a.post(f"/api/v1/chats/{chat_id}/decline/")
+    assert response.data == {"state": "waiting", "mode": "compatible", "intention": "dating"}
+    assert heartbeat(b).data["state"] == "waiting"
+    assert Conversation.objects.get(pk=chat_id).end_reason == "declined"
+    assert queue(c).data["state"] == "invited"
+    assert Conversation.objects.exclude(status="ended").count() == 1
+    a.delete("/api/v1/matching/queue/")
+    # Delayed duplicate must not undo an explicit stop in another tab.
+    assert a.post(f"/api/v1/chats/{chat_id}/decline/").data["state"] == "idle"
+
+
+def test_decline_does_not_requeue_absent_peer(people):
+    chat_id = pair(people, active=False)
+    MatchSlot.objects.filter(user=people[1][0]).update(expires_at=timezone.now() + timedelta(seconds=40))
+    assert people[0][1].post(f"/api/v1/chats/{chat_id}/decline/").data["state"] == "waiting"
+    assert not MatchSlot.objects.filter(user=people[1][0]).exists()
+
+
+def test_next_person_requeues_only_initiator_and_can_match_immediately(people):
+    chat_id = pair(people)
+    assert queue(people[2][1]).data["state"] == "waiting"
+    result = people[0][1].post(f"/api/v1/chats/{chat_id}/next/")
+    assert result.data["state"] == "invited"
+    assert result.data["peer"]["alias"] == people[2][0].profile.alias
+    assert heartbeat(people[1][1]).data["state"] == "idle"
+    assert people[0][1].post(f"/api/v1/chats/{chat_id}/next/").data["id"] == result.data["id"]
+
+
+@pytest.mark.parametrize("present", [True, False])
+def test_timeout_requeues_only_present_person_who_accepted(people, present):
+    chat_id = pair(people, active=False)
+    a, b = people[0][1], people[1][1]
+    a.post(f"/api/v1/chats/{chat_id}/accept/")
+    Conversation.objects.update(invitation_expires_at=timezone.now() - timedelta(seconds=1))
+    if not present:
+        MatchSlot.objects.filter(user=people[0][0]).update(expires_at=timezone.now() + timedelta(seconds=40))
+    assert heartbeat(b).data["state"] == "idle"
+    assert MatchSlot.objects.filter(user=people[0][0]).exists() == present
+
+
+def test_recent_pair_can_match_after_cooldown(people):
+    chat_id = pair(people, active=False)
+    people[0][1].post(f"/api/v1/chats/{chat_id}/decline/")
+    Conversation.objects.update(ended_at=timezone.now() - timedelta(minutes=11))
+    assert heartbeat(people[1][1]).data["state"] == "invited"
+
+
+def test_requeue_actions_enforce_membership_and_current_state(people):
+    chat_id = pair(people, active=False)
+    assert people[2][1].post(f"/api/v1/chats/{chat_id}/decline/").status_code == 404
+    assert people[2][1].post(f"/api/v1/chats/{chat_id}/next/").status_code == 404
+    assert people[0][1].post(f"/api/v1/chats/{chat_id}/next/").status_code == 400
+    for _, client in people[:2]:
+        client.post(f"/api/v1/chats/{chat_id}/accept/")
+    assert people[0][1].post(f"/api/v1/chats/{chat_id}/decline/").status_code == 400
+
+
 def test_message_retries_cursor_and_outsider_denial(people):
     chat_id = pair(people)
     a, b, outsider = [p[1] for p in people]

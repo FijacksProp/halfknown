@@ -78,10 +78,10 @@ export function Landing({
         </figure>
       </section>
       <div className="preview-ribbon">
-        <span className="ribbon-label">A WORK IN PROGRESS</span>
+        <span className="ribbon-label">START WITH A CONVERSATION</span>
         <p>
-          Create a profile, accept an introduction, and try text chat in the
-          local preview.
+          Choose your intention. Accept an introduction together. Take it at
+          your pace.
         </p>
         <a href="#how-it-works">
           Get to know halfknown <ArrowDown aria-hidden="true" />

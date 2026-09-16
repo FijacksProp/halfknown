@@ -1,4 +1,4 @@
-// Local file-email preview only. Creates two synthetic accounts, a chat, and one report.
+// Local file-email preview only. Creates three synthetic accounts and one report.
 // Run from web: node scripts/smoke-chat.mjs
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
@@ -100,21 +100,33 @@ async function events(account) {
 
 try {
   const a = await account();
-  const b = await account();
+  let b = await account();
   const aEvent = await events(a);
-  const bEvent = await events(b);
+  let bEvent = await events(b);
   await aEvent('connection.ready');
   await bEvent('connection.ready');
   assert.equal(
     (await a.api.joinQueue('compatible', 'conversation')).state,
     'waiting',
   );
-  const invitation = await b.api.joinQueue('compatible', 'conversation');
+  let invitation = await b.api.joinQueue('compatible', 'conversation');
   assert.equal(invitation.state, 'invited');
   assert.equal(invitation.peer.alias, a.saved.profile.alias);
   assert.equal((await a.api.heartbeat()).peer.alias, b.saved.profile.alias);
   await aEvent('match.changed');
   await bEvent('match.changed');
+  assert.equal((await a.api.declineChat(invitation.id)).state, 'waiting');
+  assert.equal((await b.api.heartbeat()).state, 'waiting');
+  assert.equal((await a.api.heartbeat()).state, 'waiting');
+  await b.api.leaveChat();
+  assert.equal((await b.api.declineChat(invitation.id)).state, 'idle');
+  // A stays in the same queue and matches a third person, not the declined pair.
+  b = await account();
+  bEvent = await events(b);
+  await bEvent('connection.ready');
+  invitation = await b.api.joinQueue('compatible', 'conversation');
+  assert.equal(invitation.state, 'invited');
+  assert.equal(invitation.peer.alias, a.saved.profile.alias);
   assert.equal((await a.api.acceptChat(invitation.id)).state, 'invited');
   assert.equal((await b.api.acceptChat(invitation.id)).state, 'active');
   const clientId = crypto.randomUUID();
@@ -142,6 +154,10 @@ try {
     (await a.api.messages(invitation.id, sent.id)).messages.length,
     1,
   );
+  assert.equal((await a.api.nextPerson(invitation.id)).state, 'waiting');
+  assert.equal((await b.api.heartbeat()).state, 'idle');
+  await a.api.leaveChat();
+  assert.equal((await a.api.nextPerson(invitation.id)).state, 'idle');
   await b.api.reportChat(
     invitation.id,
     'other',
@@ -157,10 +173,10 @@ try {
     { status: 400 },
   );
   console.log(
-    'PASS: two email sessions → queue → mutual acceptance → proxied WebSocket events → idempotent messages → typing → report/block → ended chat.',
+    'PASS: decline → automatic requeue → no repeat pairing → third-person match → chat/typing → next person → stop → stale retry safety → report/block.',
   );
   console.log(
-    'Two synthetic accounts and one clearly labeled test report remain in the local database. No credentials printed.',
+    'Three synthetic accounts and one clearly labeled test report remain in the local database. No credentials printed.',
   );
 } finally {
   for (const socket of sockets) socket.close();

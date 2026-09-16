@@ -81,3 +81,16 @@ async def test_large_frames_rejected():
     await ws.send_to(text_data="x" * 1025)
     assert (await ws.receive_output())["code"] == 4400
     await ws.disconnect()
+
+
+async def test_ping_flood_is_closed_before_unbounded_database_work():
+    _, key = await make_session()
+    ws = socket(key)
+    await ws.connect()
+    await ws.receive_json_from()
+    for _ in range(20):
+        await ws.send_json_to({"type": "ping"})
+        assert await ws.receive_json_from() == {"type": "pong"}
+    await ws.send_json_to({"type": "ping"})
+    assert (await ws.receive_output())["code"] == 4429
+    await ws.disconnect()
