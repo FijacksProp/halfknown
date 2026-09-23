@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.profiles.models import Profile
+from apps.social.models import Connection, DirectMessage
 
 pytestmark = pytest.mark.django_db
 
@@ -47,12 +48,35 @@ def test_discovery_connection_messages_and_block(signed_in, user):
     assert signed_in.post(messages_path, {"body": "Hello there"}).status_code == 201
     assert peer_client.get(messages_path).data["results"][0]["body"] == "Hello there"
     assert peer_client.post(messages_path, {"body": "Hi!"}).status_code == 201
-    assert signed_in.get(f"/api/v1/social/connections/").data["results"][0]["unread_count"] == 1
+    assert signed_in.get("/api/v1/social/connections/").data["results"][0]["unread_count"] == 1
     assert signed_in.get(messages_path).data["results"][1]["body"] == "Hi!"
-    assert signed_in.get(f"/api/v1/social/connections/").data["results"][0]["unread_count"] == 0
+    assert signed_in.get("/api/v1/social/connections/").data["results"][0]["unread_count"] == 0
     assert signed_in.post(path + "block/").status_code == 204
     assert signed_in.get(path).status_code == 404
     assert peer_client.get(messages_path).status_code == 404
+
+
+def test_unread_count_uses_last_reply_for_existing_conversations(signed_in, user):
+    create_profile(user)
+    peer = User.objects.create_user("old-thread-peer@example.com", email_verified_at=timezone.now())
+    create_profile(peer)
+    connection = Connection.objects.create(
+        first=user, second=peer, requested_by=user, status="accepted"
+    )
+    DirectMessage.objects.create(connection=connection, sender=peer, body="Earlier message")
+    DirectMessage.objects.create(connection=connection, sender=user, body="My reply")
+    latest = DirectMessage.objects.create(connection=connection, sender=peer, body="New message")
+    connections_path = "/api/v1/social/connections/"
+    messages_path = f"/api/v1/social/connections/{connection.pk}/messages/"
+
+    assert signed_in.get(connections_path).data["results"][0]["unread_count"] == 1
+    assert signed_in.get(messages_path).status_code == 200
+    connection.refresh_from_db()
+    assert connection.first_read_at == latest.created_at
+    assert signed_in.get(connections_path).data["results"][0]["unread_count"] == 0
+
+    DirectMessage.objects.create(connection=connection, sender=peer, body="Another new message")
+    assert signed_in.get(connections_path).data["results"][0]["unread_count"] == 1
 
 
 def test_showcase_and_private_profile(signed_in, user):

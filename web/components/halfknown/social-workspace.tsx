@@ -53,6 +53,7 @@ export function SocialWorkspace({
   const [me, setMe] = useState<SocialProfile | null>(null);
   const [people, setPeople] = useState<SocialProfile[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [meLoading, setMeLoading] = useState(true);
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [selected, setSelected] = useState<SocialProfile | null>(null);
   const [openChat, setOpenChat] = useState<ConnectionRow | null>(null);
@@ -116,37 +117,55 @@ export function SocialWorkspace({
     async () => setConnections((await api.connections()).results),
     [],
   );
+  const applySelf = useCallback((profile: SocialProfile) => {
+    setMe(profile);
+    setBio(profile.bio);
+    setAvatar(profile.avatar_id);
+    setIntentions(profile.intentions);
+    setMyInterests(profile.interests);
+    setDiscoverable(Boolean(profile.discoverable));
+  }, []);
+  const loadMe = useCallback(async () => {
+    applySelf(await api.socialMe());
+  }, [applySelf]);
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([api.socialMe(), api.discover(), api.connections()])
-      .then(([profile, discovery, network]) => {
+    void loadMe()
+      .catch((reason) => {
+        if (alive)
+          setError(
+            reason instanceof Error ? reason.message : 'Could not load your space.',
+          );
+      })
+      .finally(() => {
+        if (alive) setMeLoading(false);
+      });
+    void api.discover()
+      .then((discovery) => {
         if (!alive) return;
-        setMe(profile);
-        setBio(profile.bio);
-        setAvatar(profile.avatar_id);
-        setIntentions(profile.intentions);
-        setMyInterests(profile.interests);
-        setDiscoverable(Boolean(profile.discoverable));
         setPeople(discovery.results);
         setOffset(discovery.next_offset);
-        setConnections(network.results);
       })
       .catch((reason) => {
         if (alive)
           setError(
-            reason instanceof Error
-              ? reason.message
-              : 'Could not load Halfknown.',
+            reason instanceof Error ? reason.message : 'Discovery is unavailable.',
           );
       })
       .finally(() => {
         if (alive) setInitialLoading(false);
       });
+    void loadConnections().catch((reason) => {
+      if (alive)
+        setError(
+          reason instanceof Error ? reason.message : 'Could not load connections.',
+        );
+    });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [loadConnections, loadMe]);
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadPeople().catch((reason) =>
@@ -162,11 +181,20 @@ export function SocialWorkspace({
 
   useEffect(() => {
     if (tab !== 'connections') return;
-    void loadConnections().catch(() => undefined);
+    let alive = true;
+    void loadConnections().catch((reason) => {
+      if (alive)
+        setError(
+          reason instanceof Error ? reason.message : 'Could not load connections.',
+        );
+    });
     const timer = setInterval(() => {
       void loadConnections().catch(() => undefined);
     }, 8000);
-    return () => clearInterval(timer);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
   }, [tab, loadConnections]);
 
   useEffect(() => {
@@ -185,6 +213,9 @@ export function SocialWorkspace({
             page.results.forEach((message) => unique.set(message.id, message));
             return [...unique.values()].sort((a, b) => a.id - b.id);
           });
+          if (page.results.some((message) => !message.mine)) {
+            void loadConnections().catch(() => undefined);
+          }
         }
       } catch (reason) {
         if (alive)
@@ -203,7 +234,7 @@ export function SocialWorkspace({
       alive = false;
       clearInterval(timer);
     };
-  }, [openChatId]);
+  }, [openChatId, loadConnections]);
 
   async function act(action: () => Promise<void>) {
     if (busy) return;
@@ -237,13 +268,6 @@ export function SocialWorkspace({
     cursor.current = 0;
     setMessages([]);
     setDraft('');
-    setConnections((previous) =>
-      previous.map((connection) =>
-        connection.id === row.id
-          ? { ...connection, unread_count: 0 }
-          : connection,
-      ),
-    );
     setOpenChat(row);
     setTab('connections');
     setSelected(null);
@@ -294,10 +318,7 @@ export function SocialWorkspace({
             </button>
             <button
               className={tab === 'connections' ? 'active' : ''}
-              onClick={() => {
-                chooseTab('connections');
-                void loadConnections();
-              }}
+              onClick={() => chooseTab('connections')}
             >
               <Users size={18} /> Connections{' '}
               {pending.some((item) => item.direction === 'incoming') && <i />}
@@ -629,19 +650,24 @@ export function SocialWorkspace({
                       }
                       key={row.id}
                       onClick={() => openConversation(row)}
+                      aria-label={`Open conversation with ${row.peer.alias}${
+                        row.unread_count
+                          ? `, ${row.unread_count} unread ${row.unread_count === 1 ? 'message' : 'messages'}`
+                          : ''
+                      }`}
                     >
                       <Avatar id={row.peer.avatar_id} size="small" />
-                      <span>
+                      <span className="connection-item-copy">
                         <strong>{row.peer.alias}</strong>
                         <small>Open conversation</small>
                       </span>
-                      <span className="connection-item-actions">
+                      <span className="connection-item-actions" aria-hidden="true">
+                        <MessageCircle size={19} />
                         {row.unread_count > 0 && (
-                          <span className="unread-count" aria-label={`${row.unread_count} unread messages`}>
+                          <span className="unread-count">
                             {row.unread_count > 99 ? '99+' : row.unread_count}
                           </span>
                         )}
-                        <MessageCircle size={18} />
                       </span>
                     </button>
                   ))
@@ -728,6 +754,28 @@ export function SocialWorkspace({
           </>
         )}
 
+        {tab === 'me' && !me && (
+          <div className="empty-state" role="status">
+            <h2>{meLoading ? 'Opening your space…' : 'Your space could not load.'}</h2>
+            {!meLoading && (
+              <button
+                className="round-action"
+                onClick={() =>
+                  void act(async () => {
+                    setMeLoading(true);
+                    try {
+                      await loadMe();
+                    } finally {
+                      setMeLoading(false);
+                    }
+                  })
+                }
+              >
+                Try again
+              </button>
+            )}
+          </div>
+        )}
         {tab === 'me' && me && (
           <>
             <div className="simple-heading">

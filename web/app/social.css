@@ -1181,8 +1181,8 @@ select {
   background: none;
   text-align: left;
 }
-.connection-item > span:not(.character-avatar),
-.connection-item > button > span {
+.connection-item > .connection-item-copy,
+.connection-item > button > span:not(.character-avatar) {
   min-width: 0;
   display: grid;
   gap: 1px;
@@ -1199,24 +1199,31 @@ select {
   font-size: 0.73rem;
 }
 .connection-item-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex: 0 0 auto;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
 }
 .connection-item-actions svg {
   color: var(--red);
 }
 .unread-count {
-  min-width: 20px;
-  height: 20px;
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 17px;
+  height: 17px;
   display: inline-grid;
   place-items: center;
-  padding: 0 5px;
+  box-sizing: border-box;
+  padding: 0 3px;
+  border: 2px solid #fffdfa;
   border-radius: 100px;
   background: var(--red);
   color: #fff;
-  font-size: 0.67rem;
+  font-size: 0.59rem;
   font-weight: 900;
   line-height: 1;
 }

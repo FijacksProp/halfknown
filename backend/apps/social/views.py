@@ -2,7 +2,6 @@ from django.db import connection as db_connection
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -88,14 +87,26 @@ def request_connection(user, peer):
 def connection_data(connection, viewer):
     peer_id = connection.second_id if connection.first_id == viewer.pk else connection.first_id
     read_at = connection.first_read_at if connection.first_id == viewer.pk else connection.second_read_at
-    unread_messages = connection.messages.filter(sender_id=peer_id)
-    if read_at is not None:
-        unread_messages = unread_messages.filter(created_at__gt=read_at)
+    unread_count = 0
+    if connection.status == "accepted":
+        # Conversations created before read tracking have no saved read time.
+        # A reply is the latest evidence that earlier messages were seen.
+        if read_at is None:
+            read_at = (
+                connection.messages.filter(sender_id=viewer.pk)
+                .order_by("-created_at")
+                .values_list("created_at", flat=True)
+                .first()
+            )
+        unread_messages = connection.messages.filter(sender_id=peer_id)
+        if read_at is not None:
+            unread_messages = unread_messages.filter(created_at__gt=read_at)
+        unread_count = unread_messages.count()
     return {
         "id": str(connection.pk),
         "status": connection.status,
         "direction": "outgoing" if connection.requested_by_id == viewer.pk else "incoming",
-        "unread_count": unread_messages.count() if connection.status == "accepted" else 0,
+        "unread_count": unread_count,
     }
 
 
@@ -334,14 +345,21 @@ class MessagesView(APIView):
         connection = self.connection(request, connection_id)
         if not connection:
             return Response({"detail": "Conversation unavailable."}, status=404)
-        read_field = "first_read_at" if connection.first_id == request.user.pk else "second_read_at"
-        setattr(connection, read_field, timezone.now())
-        connection.save(update_fields=[read_field])
         try:
             after = max(0, int(request.query_params.get("after", "0")))
         except ValueError:
             raise serializers.ValidationError({"after": "Use a number."}) from None
-        messages = connection.messages.filter(pk__gt=after).order_by("pk")[:100]
+        messages = list(connection.messages.filter(pk__gt=after).order_by("pk")[:100])
+        latest_seen = max(
+            (message.created_at for message in messages if message.sender_id != request.user.pk),
+            default=None,
+        )
+        if latest_seen is not None:
+            read_field = "first_read_at" if connection.first_id == request.user.pk else "second_read_at"
+            current_read_at = getattr(connection, read_field)
+            if current_read_at is None or latest_seen > current_read_at:
+                setattr(connection, read_field, latest_seen)
+                connection.save(update_fields=[read_field])
         return Response({"results": [self.output(message, request.user) for message in messages]})
 
     def post(self, request, connection_id):
