@@ -2,6 +2,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
+from apps.profiles.catalog import AVATAR_GROUPS
 from apps.profiles.models import MatchPreferences, PrivateProfile, Profile
 
 pytestmark = pytest.mark.django_db
@@ -27,6 +28,9 @@ def test_guest_can_enter_random_chat_without_email(client, settings):
     assert response.data["account"]["email"] == ""
     assert response.data["profile"]["intentions"] == ["conversation"]
     assert response.data["profile"]["interests"] == []
+    assigned = response.data["profile"]
+    assert assigned["avatar_group"] in AVATAR_GROUPS
+    assert assigned["avatar_id"] in AVATAR_GROUPS[assigned["avatar_group"]]
     user = User.objects.get(pk=response.data["account"]["id"])
     assert user.email.endswith("@guest.halfknown.invalid")
     assert user.private_profile.birth_date is None
@@ -66,6 +70,31 @@ def test_profile_created_atomically_and_private_fields_hidden(signed_in, user, p
     alias = response.data["profile"]["alias"]
     assert signed_in.put("/api/v1/profile/", profile_payload, format="json").data["profile"]["alias"] == alias
     assert Profile.objects.count() == 1
+
+
+@pytest.mark.parametrize("gender,suffix", [("woman", "female"), ("man", "male")])
+def test_new_profile_gets_matching_portrait_and_cannot_change_group(
+    signed_in, profile_payload, gender, suffix
+):
+    profile_payload["gender"] = gender
+    response = signed_in.put("/api/v1/profile/", profile_payload, format="json")
+    assert response.status_code == 201
+    assigned = response.data["profile"]
+    assert assigned["avatar_id"] == f"{assigned['avatar_group']}-{suffix}"
+    other_group = next(group for group in AVATAR_GROUPS if group != assigned["avatar_group"])
+    rejected = signed_in.patch(
+        "/api/v1/social/me/", {"avatar_id": f"{other_group}-{suffix}"}, format="json"
+    )
+    assert rejected.status_code == 400
+    wrong_presentation = "male" if suffix == "female" else "female"
+    assert signed_in.patch(
+        "/api/v1/social/me/",
+        {"avatar_id": f"{assigned['avatar_group']}-{wrong_presentation}"},
+        format="json",
+    ).status_code == 400
+    assert signed_in.patch(
+        "/api/v1/social/me/", {"avatar_id": assigned["avatar_id"]}, format="json"
+    ).status_code == 200
 
 
 @pytest.mark.parametrize(

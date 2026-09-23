@@ -26,7 +26,7 @@ import {
   type SocialMessage,
   type SocialProfile,
 } from '@/lib/api';
-import { Avatar, avatarOptions } from './avatar';
+import { Avatar } from './avatar';
 import { ChatWorkspace } from './chat-workspace';
 
 type Tab = 'discover' | 'connections' | 'me' | 'quick';
@@ -90,6 +90,14 @@ export function SocialWorkspace({
   const cursor = useRef(0);
   const messageScroll = useRef<HTMLDivElement>(null);
   const openChatId = openChat?.id;
+  const availablePortraits = (catalog.avatar_groups[me?.avatar_group ?? ''] ?? []).filter(
+    (id) =>
+      me?.gender === 'woman'
+        ? id.endsWith('-female')
+        : me?.gender === 'man'
+          ? id.endsWith('-male')
+          : true,
+  );
 
   useEffect(() => {
     messageScroll.current?.scrollTo({
@@ -338,7 +346,7 @@ export function SocialWorkspace({
           </nav>
           <div className="app-header-actions">
             <button className="mini-profile" onClick={() => chooseTab('me')}>
-              <Avatar id={avatar} size="small" />
+              <Avatar id={me?.avatar_id ?? saved.profile.avatar_id} size="small" />
               <span>{me?.alias ?? 'My space'}</span>
             </button>
             <button
@@ -540,7 +548,7 @@ export function SocialWorkspace({
                 ) : (
                   <div className="empty-state">
                     <div className="empty-illustration">
-                      <Avatar id="alien-01" size="large" />
+                      <Avatar id="alien-female" size="large" />
                     </div>
                     <h3>It’s quiet here for now.</h3>
                     <p>
@@ -791,26 +799,11 @@ export function SocialWorkspace({
             <div className="my-layout">
               <section className="profile-editor">
                 <div className="editor-title">
-                  <Avatar id={avatar} size="medium" />
+                  <Avatar id={me.avatar_id} size="medium" />
                   <div>
                     <h2>{me.alias}</h2>
-                    <span>{avatar.split('-')[0]} character</span>
+                    <span>{me.avatar_group} character</span>
                   </div>
-                </div>
-                <h3>Choose your character</h3>
-                <div className="avatar-choices">
-                  {avatarOptions.map((item) => (
-                    <button
-                      className={avatar === item.id ? 'chosen' : ''}
-                      key={item.id}
-                      onClick={() => setAvatar(item.id)}
-                      aria-label={item.label}
-                      aria-pressed={avatar === item.id}
-                    >
-                      <Avatar id={item.id} size="medium" />
-                      <span>{item.group}</span>
-                    </button>
-                  ))}
                 </div>
                 <label className="form-label">
                   Your introduction
@@ -875,7 +868,6 @@ export function SocialWorkspace({
                   onClick={() =>
                     void act(async () => {
                       const profile = await api.saveSocialMe({
-                        avatar_id: avatar,
                         bio,
                         intentions,
                         interests: myInterests,
@@ -1047,6 +1039,47 @@ export function SocialWorkspace({
                 </section>
               </aside>
             </div>
+            <section className="avatar-settings">
+              <span className="section-kicker">YOUR CHARACTER</span>
+              <h2>Manage your portrait</h2>
+              <p>
+                You belong to the {me.avatar_group} group. Portraits from other
+                creature groups aren’t available to this profile.
+              </p>
+              <div className="avatar-choices">
+                {availablePortraits.map((id) => (
+                    <button
+                      type="button"
+                      className={avatar === id ? 'chosen' : ''}
+                      key={id}
+                      onClick={() => setAvatar(id)}
+                      aria-label={`${me.avatar_group} portrait ${id.endsWith('-female') ? 'female' : 'male'}`}
+                      aria-pressed={avatar === id}
+                    >
+                      <Avatar id={id} size="medium" />
+                      <span>{id.endsWith('-female') ? 'Feminine' : 'Masculine'}</span>
+                    </button>
+                ))}
+              </div>
+              {availablePortraits.length === 1 && (
+                <p className="avatar-settings-note">More portraits for your group are coming later.</p>
+              )}
+              {avatar !== me.avatar_id && (
+                <button
+                  type="button"
+                  className="round-action"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      applySelf(await api.saveSocialMe({ avatar_id: avatar }));
+                      setNotice('Your portrait is updated.');
+                    })
+                  }
+                >
+                  Save portrait <Check size={18} />
+                </button>
+              )}
+            </section>
           </>
         )}
 

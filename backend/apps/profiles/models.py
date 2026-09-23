@@ -25,6 +25,7 @@ class Profile(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
     alias = models.CharField(max_length=64, unique=True, default=new_alias, editable=False)
+    avatar_group = models.CharField(max_length=16, default="", editable=False)
     avatar_id = models.CharField(max_length=32)
     gender = models.CharField(max_length=24)
     intentions = models.JSONField(default=list)

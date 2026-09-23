@@ -15,7 +15,6 @@ export const emptyDraft = (): Onboarding => ({
   languages: ['en'],
   conversation_style: 'playful',
   prompt_answer: '',
-  avatar_id: '',
   accepted_terms: false,
   accepted_guidelines: false,
   policy_version: '',
@@ -74,8 +73,7 @@ export function stepValid(step: number, draft: Onboarding): boolean {
   if (step === 3)
     return (
       draft.interests.length >= 3 &&
-      draft.interests.length <= 5 &&
-      !!draft.avatar_id
+      draft.interests.length <= 5
     );
   return draft.accepted_terms && draft.accepted_guidelines;
 }
@@ -86,10 +84,6 @@ export function label(value: string): string {
     self_described: 'Self-described',
     undisclosed: 'Prefer not to say',
     conversation: 'Just talking',
-    'human-01': 'Human',
-    'animal-01': 'Animal',
-    'alien-01': 'Alien',
-    'creature-01': 'Creature',
   };
   return (
     names[value] ??

@@ -5,7 +5,6 @@ import { ArrowLeft, ArrowRight, Check, LockKeyhole } from 'lucide-react';
 import Image from 'next/image';
 import { Landing } from '@/components/halfknown/landing';
 import { SocialWorkspace } from '@/components/halfknown/social-workspace';
-import { Avatar, avatarOptions } from '@/components/halfknown/avatar';
 import {
   api,
   ApiError,
@@ -21,7 +20,6 @@ export default function Home() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [saved, setSaved] = useState<SavedProfile | null>(null);
-  const [avatar, setAvatar] = useState('human-01');
   const [gender, setGender] = useState('undisclosed');
   const [interests, setInterests] = useState<string[]>([]);
   const [adult, setAdult] = useState(false);
@@ -106,7 +104,6 @@ export default function Home() {
     await perform(async () => {
       const result = await api.randomAccess({
         gender,
-        avatar_id: avatar,
         interests,
         discoverable,
         adult_confirmed: adult,
@@ -206,24 +203,9 @@ export default function Home() {
             <span className="section-kicker">STEP ONE OF ONE</span>
             <h2>Come as you are.</h2>
             <p>
-              Pick a character and a few things you’re into. You can add more to
-              your profile later.
+              Tell us a little about yourself. We’ll introduce you to one of
+              Halfknown’s creature groups when you join.
             </p>
-            <h3>Choose a character</h3>
-            <div className="entry-avatar-grid">
-              {avatarOptions.map((item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  className={avatar === item.id ? 'selected' : ''}
-                  onClick={() => setAvatar(item.id)}
-                  aria-pressed={avatar === item.id}
-                >
-                  <Avatar id={item.id} size="medium" />
-                  <span>{item.group}</span>
-                </button>
-              ))}
-            </div>
             <label className="form-label">
               Your gender <span>(only shared if you choose to)</span>
               <select

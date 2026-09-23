@@ -34,7 +34,7 @@ class OnboardingInput(serializers.Serializer):
     accepted_terms = serializers.BooleanField()
     accepted_guidelines = serializers.BooleanField()
     policy_version = serializers.CharField(max_length=64)
-    avatar_id = serializers.ChoiceField(choices=AVATARS)
+    avatar_id = serializers.ChoiceField(choices=AVATARS, required=False)
     gender = serializers.ChoiceField(choices=GENDERS)
     intentions = UniqueChoices(INTENTIONS, min_length=1, max_length=4)
     interests = UniqueChoices(INTERESTS, min_length=3, max_length=5)
@@ -71,6 +71,7 @@ class ProfileOutput(serializers.ModelSerializer):
         fields = [
             "id",
             "alias",
+            "avatar_group",
             "avatar_id",
             "gender",
             "intentions",

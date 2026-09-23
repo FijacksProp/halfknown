@@ -65,7 +65,6 @@ test('incomplete steps cannot move forward', () => {
     stepValid(3, {
       ...draft,
       interests: ['music', 'books', 'art'],
-      avatar_id: 'animal-01',
     }),
     true,
   );

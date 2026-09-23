@@ -19,8 +19,8 @@ Use case: stylized-concept. Asset type: square profile avatar portrait for a soc
 
 Character briefs: diverse contemporary humans; an anthropomorphic fox and cat; indigo and teal aliens; moss and olive goblins; warm- and brown-skinned vampires; brown- and fair-skinned elves; two fae with subtle freckles and folded wings; and two humanlike androids with understated synthetic seams.
 
-Generated with the built-in ImageGen tool. These are style and character-direction samples, not the final 80-image catalog.
+Generated with the built-in ImageGen tool. These are the first 16 portraits, not the final 80-image catalog. Smaller WebP copies used by the app live in [`web/public/avatars/portraits`](../web/public/avatars/portraits/); the original PNGs remain here.
 
-## Product behavior for the later avatar catalog
+## Current product behavior
 
-At registration, assign the user a creature group and an avatar variant that matches the gender they selected. Save both so they stay stable across sessions. Later, put avatar changes at the bottom of My Space and limit choices to the user's assigned creature group and matching presentation. Add a respectful option for people who do not select man or woman before wiring this flow into onboarding.
+Registration assigns and saves a random creature group with a portrait fitting the selected gender. Existing users receive a random group and portrait through a data migration. My Space shows avatar management at the bottom and permits only portraits from the assigned group. With one portrait per binary gender per group so far, those users see their current portrait until more images are made; users who select another gender or do not disclose one can choose either presentation within their group.

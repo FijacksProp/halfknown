@@ -345,11 +345,11 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
           </div>
           <div className="quick-intro-art" aria-hidden="true">
             <Avatar
-              id="alien-01"
+              id="alien-female"
               className="quick-intro-avatar quick-intro-avatar--first"
             />
             <Avatar
-              id="human-02"
+              id="human-male"
               className="quick-intro-avatar quick-intro-avatar--second"
             />
           </div>
@@ -361,7 +361,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
           <div className="quick-waiting-avatars" aria-hidden="true">
             <Avatar id={saved.profile.avatar_id} />
             <span className="quick-waiting-line" />
-            <Avatar id="goblin-01" />
+            <Avatar id="goblin-female" />
           </div>
           <span className="section-kicker">LOOKING AROUND</span>
           <h2>Finding your next hello…</h2>

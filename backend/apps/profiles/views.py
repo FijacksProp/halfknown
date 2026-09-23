@@ -18,7 +18,16 @@ from rest_framework.views import APIView
 from apps.accounts.models import User
 from apps.matching.services import leave, match_lock
 
-from .catalog import AVATAR_GROUPS, AVATARS, GENDERS, INTENTIONS, INTERESTS, STYLES
+from .catalog import (
+    AVATAR_GROUPS,
+    AVATARS,
+    GENDERS,
+    INTENTIONS,
+    INTERESTS,
+    STYLES,
+    assign_avatar,
+    avatar_choices,
+)
 from .models import MatchPreferences, PrivateProfile, Profile, new_alias
 from .serializers import OnboardingInput, PreferenceInput, PreferencesOutput, ProfileOutput
 
@@ -29,7 +38,6 @@ class RandomAccessInput(serializers.Serializer):
     accepted_terms = serializers.BooleanField()
     accepted_guidelines = serializers.BooleanField()
     policy_version = serializers.CharField(max_length=64)
-    avatar_id = serializers.ChoiceField(choices=AVATARS, required=False)
     interests = serializers.ListField(
         child=serializers.ChoiceField(choices=INTERESTS), required=False, max_length=5
     )
@@ -77,10 +85,12 @@ class RandomAccessView(APIView):
                     "policy_version": values["policy_version"],
                 },
             )
-            profile, _ = Profile.objects.get_or_create(
+            group, avatar_id = assign_avatar(values["gender"])
+            profile, created = Profile.objects.get_or_create(
                 user=user,
                 defaults={
-                    "avatar_id": values.get("avatar_id") or secrets.choice(AVATARS),
+                    "avatar_group": group,
+                    "avatar_id": avatar_id,
                     "gender": values["gender"],
                     "intentions": ["conversation"],
                     "interests": values.get("interests", []),
@@ -90,14 +100,31 @@ class RandomAccessView(APIView):
                 },
             )
             profile.gender = values["gender"]
-            if values.get("avatar_id"):
-                profile.avatar_id = values["avatar_id"]
+            if not created:
+                group = profile.avatar_group or profile.avatar_id.split("-")[0]
+                if group not in AVATAR_GROUPS:
+                    group, avatar_id = assign_avatar(values["gender"])
+                elif profile.avatar_id in avatar_choices(group, values["gender"]):
+                    avatar_id = profile.avatar_id
+                else:
+                    avatar_id = secrets.choice(avatar_choices(group, values["gender"]))
+                profile.avatar_group = group
+                profile.avatar_id = avatar_id
             if "interests" in values:
                 profile.interests = values["interests"]
             # Existing anonymous profiles remain private until the owner opts in.
             if values["discoverable"]:
                 profile.discoverable = True
-            profile.save(update_fields=["gender", "avatar_id", "interests", "discoverable", "updated_at"])
+            profile.save(
+                update_fields=[
+                    "gender",
+                    "avatar_group",
+                    "avatar_id",
+                    "interests",
+                    "discoverable",
+                    "updated_at",
+                ]
+            )
             preferences, _ = MatchPreferences.objects.get_or_create(
                 user=user,
                 defaults={
@@ -152,7 +179,7 @@ class IdentityPreviewView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({"alias": new_alias(), "avatar_id": secrets.choice(AVATARS)})
+        return Response({"alias": new_alias(), "avatar_id": assign_avatar("undisclosed")[1]})
 
 
 class ProfileView(APIView):
@@ -177,6 +204,7 @@ class ProfileView(APIView):
         data = OnboardingInput(data=request.data)
         data.is_valid(raise_exception=True)
         values = dict(data.validated_data)
+        requested_avatar = values.pop("avatar_id", None)
         preferences = values.pop("preferences")
         birth_date = values.pop("birth_date")
         policy_version = values.pop("policy_version")
@@ -186,6 +214,23 @@ class ProfileView(APIView):
             user = User.objects.select_for_update().get(pk=request.user.pk)
             if create_only and Profile.objects.filter(user=user).exists():
                 return Response({"detail": "Your profile already exists. Reload it to continue."}, status=409)
+            existing = Profile.objects.filter(user=user).first()
+            if existing:
+                group = existing.avatar_group or existing.avatar_id.split("-")[0]
+                choices = avatar_choices(group, values["gender"])
+                if requested_avatar and requested_avatar not in choices:
+                    raise ValidationError(
+                        {"avatar_id": "Choose a portrait from your assigned creature group."}
+                    )
+                avatar_id = requested_avatar or existing.avatar_id
+                if not choices:
+                    group, avatar_id = assign_avatar(values["gender"])
+                elif avatar_id not in choices:
+                    avatar_id = secrets.choice(choices)
+            else:
+                group, avatar_id = assign_avatar(values["gender"])
+            values["avatar_group"] = group
+            values["avatar_id"] = avatar_id
             private = PrivateProfile.objects.filter(user=user).first()
             if private and private.birth_date != birth_date:
                 raise ValidationError({"birth_date": "Contact support to correct your birth date."})

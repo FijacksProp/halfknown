@@ -1,11 +1,10 @@
-export const avatarOptions = [
-  { id: 'human-01', label: 'The human', group: 'Human' },
-  { id: 'animal-01', label: 'The animal', group: 'Animal' },
-  { id: 'alien-01', label: 'The alien', group: 'Alien' },
-  { id: 'goblin-01', label: 'The goblin', group: 'Goblin' },
-  { id: 'vampire-01', label: 'The vampire', group: 'Vampire' },
-  { id: 'human-02', label: 'The artist', group: 'Human' },
+const creatureGroups = [
+  'human', 'animal', 'alien', 'goblin', 'vampire', 'elf', 'fae', 'android',
 ] as const;
+
+const portraitIds = new Set(
+  creatureGroups.flatMap((group) => [`${group}-male`, `${group}-female`]),
+);
 
 export function Avatar({
   id,
@@ -19,7 +18,8 @@ export function Avatar({
   return (
     <span
       aria-hidden="true"
-      className={`character-avatar character-avatar--${id} character-avatar--${size} ${className}`}
+      className={`character-avatar ${portraitIds.has(id) ? 'character-avatar--portrait' : `character-avatar--${id}`} character-avatar--${size} ${className}`}
+      style={portraitIds.has(id) ? { backgroundImage: `url('/avatars/portraits/${id}.webp')` } : undefined}
     />
   );
 }

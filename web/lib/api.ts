@@ -20,6 +20,7 @@ export type Profile = {
   id: string;
   alias: string;
   avatar_id: string;
+  avatar_group: string;
   gender: string;
   intentions: string[];
   interests: string[];
@@ -71,7 +72,6 @@ export type RandomAccess = {
   accepted_terms: boolean;
   accepted_guidelines: boolean;
   policy_version: string;
-  avatar_id?: string;
   interests?: string[];
   discoverable?: boolean;
 };
@@ -113,7 +113,7 @@ export type SocialMessage = {
 };
 export type Onboarding = Omit<
   Profile,
-  'id' | 'alias' | 'bio' | 'discoverable'
+  'id' | 'alias' | 'bio' | 'discoverable' | 'avatar_group' | 'avatar_id'
 > & {
   birth_date: string;
   accepted_terms: boolean;

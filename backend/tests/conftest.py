@@ -36,7 +36,6 @@ def profile_payload(settings):
         "accepted_terms": True,
         "accepted_guidelines": True,
         "policy_version": settings.POLICY_VERSION,
-        "avatar_id": "alien-01",
         "gender": "man",
         "intentions": ["dating", "friendship"],
         "interests": ["music", "art", "books"],

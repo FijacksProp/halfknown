@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from apps.matching.services import block_peer, chat_eligible, chat_for, notify
 from apps.moderation.models import Block
-from apps.profiles.catalog import AVATARS, INTENTIONS, INTERESTS
+from apps.profiles.catalog import AVATAR_GROUPS, AVATARS, INTENTIONS, INTERESTS, avatar_choices
 from apps.profiles.models import Profile
 
 from .models import Connection, DirectMessage, Follow, ShowcaseItem, SocialReport
@@ -32,7 +32,7 @@ def public_profile(profile, viewer):
         "id": str(profile.pk),
         "alias": profile.alias,
         "avatar_id": profile.avatar_id,
-        "avatar_group": profile.avatar_id.split("-")[0],
+        "avatar_group": profile.avatar_group or profile.avatar_id.split("-")[0],
         "gender": profile.gender,
         "intentions": profile.intentions,
         "interests": profile.interests,
@@ -145,10 +145,20 @@ class SelfView(APIView):
         profile = get_object_or_404(Profile, user=request.user)
         data = ProfileEditInput(data=request.data)
         data.is_valid(raise_exception=True)
+        if "avatar_id" in data.validated_data:
+            group = profile.avatar_group or profile.avatar_id.split("-")[0]
+            if data.validated_data["avatar_id"] not in avatar_choices(group, profile.gender):
+                raise serializers.ValidationError(
+                    {"avatar_id": "Choose a portrait from your assigned creature group."}
+                )
+            profile.avatar_group = group
         for key, value in data.validated_data.items():
             setattr(profile, key, value)
         if data.validated_data:
-            profile.save(update_fields=[*data.validated_data.keys(), "updated_at"])
+            update_fields = [*data.validated_data.keys(), "updated_at"]
+            if "avatar_id" in data.validated_data:
+                update_fields.append("avatar_group")
+            profile.save(update_fields=update_fields)
         return Response(public_profile(profile, request.user))
 
 
@@ -167,9 +177,9 @@ class DiscoverView(APIView):
             if db_connection.vendor == "postgresql":
                 profiles = profiles.filter(interests__contains=[interest])
         if group:
-            if group not in {avatar.split("-")[0] for avatar in AVATARS}:
+            if group not in AVATAR_GROUPS:
                 raise serializers.ValidationError({"group": "Unknown character group."})
-            profiles = profiles.filter(avatar_id__startswith=f"{group}-")
+            profiles = profiles.filter(avatar_group=group)
         if search:
             profiles = profiles.filter(Q(alias__icontains=search) | Q(bio__icontains=search))
         try:

@@ -97,7 +97,6 @@ def test_showcase_and_private_profile(signed_in, user):
 def test_guest_can_claim_email_without_losing_profile(client, settings, django_capture_on_commit_callbacks):
     payload = {
         "gender": "undisclosed",
-        "avatar_id": "goblin-01",
         "discoverable": True,
         "adult_confirmed": True,
         "accepted_terms": True,

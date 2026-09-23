@@ -392,7 +392,7 @@ select {
   color: #30292d;
 }
 
-/* Character portraits use two consistent editorial group illustrations. */
+/* Square portraits are composed to sit naturally within a circle. */
 .character-avatar {
   display: inline-block;
   width: 72px;
@@ -402,7 +402,8 @@ select {
   border-radius: 50%;
   border: 2px solid #ffffffbd;
   box-shadow: 0 2px 12px #49302017;
-  background-size: 300% auto;
+  background-size: cover;
+  background-position: center;
   background-repeat: no-repeat;
   background-color: #efdfd5;
 }
@@ -416,6 +417,15 @@ select {
   border: 0;
   border-radius: 0;
   box-shadow: none;
+}
+.character-avatar--human-01,
+.character-avatar--animal-01,
+.character-avatar--alien-01,
+.character-avatar--goblin-01,
+.character-avatar--creature-01,
+.character-avatar--vampire-01,
+.character-avatar--human-02 {
+  background-size: 300% auto;
 }
 .character-avatar--human-01 {
   background-image: url('/images/halfknown-characters.png');
@@ -1035,9 +1045,15 @@ select {
   position: relative;
   background: #f0dfd5;
   overflow: hidden;
+  display: grid;
+  place-items: center;
 }
 .person-card-art .character-avatar {
-  background-size: 300% auto;
+  width: 176px;
+  height: 176px;
+  border: 5px solid #fff8;
+  border-radius: 50%;
+  box-shadow: 0 8px 28px #432b3129;
 }
 .group-label {
   position: absolute;
@@ -1903,9 +1919,36 @@ select {
   overflow: hidden;
   position: relative;
   background: #f3ddd5;
+  display: grid;
+  place-items: center;
 }
 .drawer-art .character-avatar {
-  background-size: 300% auto;
+  width: 208px;
+  height: 208px;
+  border: 6px solid #fff8;
+  border-radius: 50%;
+  box-shadow: 0 10px 30px #432b3129;
+}
+.avatar-settings {
+  margin-top: 28px;
+  padding: 28px;
+  border: 1px solid #e7dcd4;
+  border-radius: 15px;
+  background: #fffdfa;
+}
+.avatar-settings h2 {
+  margin: 8px 0;
+  font: 700 1.8rem var(--font-display);
+}
+.avatar-settings p {
+  color: #6d6265;
+  max-width: 54ch;
+}
+.avatar-settings .avatar-choices {
+  margin: 20px 0 8px;
+}
+.avatar-settings-note {
+  font-size: 0.85rem;
 }
 .drawer-art > span:last-child {
   position: absolute;
@@ -2374,6 +2417,10 @@ select {
   }
   .person-card-art {
     height: 150px;
+  }
+  .person-card-art .character-avatar {
+    width: 122px;
+    height: 122px;
   }
   .person-card-copy {
     padding: 12px;
