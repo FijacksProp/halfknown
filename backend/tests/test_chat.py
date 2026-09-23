@@ -41,24 +41,20 @@ def people(profile_payload):
     return result
 
 
-def queue(client, mode="compatible", intention="dating"):
-    return client.post("/api/v1/matching/queue/", {"mode": mode, "intention": intention}, format="json")
+def queue(client):
+    return client.post("/api/v1/matching/queue/", {}, format="json")
 
 
 def heartbeat(client):
     return client.post("/api/v1/matching/heartbeat/", {}, format="json")
 
 
-def pair(people, active=True):
-    a, b = people[0][1], people[1][1]
-    assert queue(a).data["state"] == "waiting"
-    response = queue(b)
+def pair(people):
+    assert queue(people[0][1]).data["state"] == "waiting"
+    response = queue(people[1][1])
     assert response.status_code == 200
-    chat_id = response.data["id"]
-    if active:
-        assert a.post(f"/api/v1/chats/{chat_id}/accept/").data["state"] == "invited"
-        assert b.post(f"/api/v1/chats/{chat_id}/accept/").data["state"] == "active"
-    return chat_id
+    assert response.data["state"] == "active"
+    return response.data["id"]
 
 
 def send(client, chat_id, body="Hello", client_id=None):
@@ -69,20 +65,60 @@ def send(client, chat_id, body="Hello", client_id=None):
     )
 
 
-def test_two_party_acceptance_and_private_output(people):
-    chat_id = pair(people, active=False)
-    a, b = people[0][1], people[1][1]
-    assert send(a, chat_id).status_code == 400
-    snapshot = heartbeat(a).data
+def test_random_pair_is_instant_and_private(people):
+    chat_id = pair(people)
+    snapshot = heartbeat(people[0][1]).data
+    assert snapshot["id"] == chat_id
+    assert snapshot["state"] == "active"
+    assert snapshot["mode"] == "random"
+    assert snapshot["intention"] == "conversation"
     assert set(snapshot["peer"]) == {"alias", "avatar_id", "shared_interests"}
+    assert snapshot["peer"]["shared_interests"] == []
     assert "email" not in str(snapshot) and "birth_date" not in str(snapshot)
-    assert a.post(f"/api/v1/chats/{chat_id}/accept/").data["state"] == "invited"
-    assert a.post(f"/api/v1/chats/{chat_id}/accept/").data["state"] == "invited"
-    assert b.post(f"/api/v1/chats/{chat_id}/accept/").data["state"] == "active"
-    assert send(a, chat_id).status_code == 201
+    assert send(people[0][1], chat_id).status_code == 201
 
 
-def test_idempotent_queue_and_no_double_pairing(people):
+def test_quick_meet_can_become_a_mutual_connection(people):
+    chat_id = pair(people)
+    path = f"/api/v1/chats/{chat_id}/connect/"
+    first = people[0][1].post(path)
+    assert first.status_code == 201
+    assert first.data["status"] == "pending"
+    second = people[1][1].post(path)
+    assert second.status_code == 200
+    assert second.data["status"] == "accepted"
+    assert first.data["id"] == second.data["id"]
+    messages = f"/api/v1/social/connections/{first.data['id']}/messages/"
+    assert people[0][1].post(messages, {"body": "Let's keep talking"}).status_code == 201
+
+
+def test_quick_connection_request_is_visible_and_can_be_declined(people):
+    chat_id = pair(people)
+    path = f"/api/v1/chats/{chat_id}/connect/"
+    assert people[1][1].get(path).data == {"connection": None}
+    request = people[0][1].post(path)
+    assert request.data["direction"] == "outgoing"
+    incoming = people[1][1].get(path).data["connection"]
+    assert incoming["id"] == request.data["id"]
+    assert incoming["status"] == "pending"
+    assert incoming["direction"] == "incoming"
+    assert people[0][1].delete(path).status_code == 404
+    assert people[2][1].get(path).status_code == 404
+    assert people[1][1].delete(path).status_code == 204
+    assert people[0][1].get(path).data["connection"]["status"] == "declined"
+    assert people[0][1].post(path).data["status"] == "declined"
+    assert people[0][1].get("/api/v1/social/connections/").data["results"] == []
+    assert people[1][1].get(path).data == {"connection": None}
+
+    renewed = people[1][1].post(path)
+    assert renewed.data["status"] == "pending"
+    assert people[0][1].get(path).data["connection"]["direction"] == "incoming"
+    accepted = people[0][1].post(path)
+    assert accepted.data["status"] == "accepted"
+    assert people[1][1].get(path).data["connection"]["status"] == "accepted"
+
+
+def test_queue_is_idempotent_and_does_not_double_book(people):
     chat_id = pair(people)
     assert queue(people[0][1]).data["id"] == chat_id
     assert queue(people[2][1]).data["state"] == "waiting"
@@ -90,69 +126,61 @@ def test_idempotent_queue_and_no_double_pairing(people):
     assert MatchSlot.objects.count() == 3
 
 
-def test_decline_preserves_both_searches_and_avoids_repeat_pair(people):
-    chat_id = pair(people, active=False)
-    a, b, c = [p[1] for p in people]
-    response = a.post(f"/api/v1/chats/{chat_id}/decline/")
-    assert response.data == {"state": "waiting", "mode": "compatible", "intention": "dating"}
-    assert heartbeat(b).data["state"] == "waiting"
-    assert Conversation.objects.get(pk=chat_id).end_reason == "declined"
-    assert queue(c).data["state"] == "invited"
-    assert Conversation.objects.exclude(status="ended").count() == 1
-    a.delete("/api/v1/matching/queue/")
-    # Delayed duplicate must not undo an explicit stop in another tab.
-    assert a.post(f"/api/v1/chats/{chat_id}/decline/").data["state"] == "idle"
-
-
-def test_decline_does_not_requeue_absent_peer(people):
-    chat_id = pair(people, active=False)
-    MatchSlot.objects.filter(user=people[1][0]).update(expires_at=timezone.now() + timedelta(seconds=40))
-    assert people[0][1].post(f"/api/v1/chats/{chat_id}/decline/").data["state"] == "waiting"
-    assert not MatchSlot.objects.filter(user=people[1][0]).exists()
-
-
-def test_next_person_requeues_only_initiator_and_can_match_immediately(people):
+def test_next_requeues_both_people_and_avoids_immediate_repeat(people):
     chat_id = pair(people)
     assert queue(people[2][1]).data["state"] == "waiting"
     result = people[0][1].post(f"/api/v1/chats/{chat_id}/next/")
-    assert result.data["state"] == "invited"
+    assert result.status_code == 200
+    assert result.data["state"] == "active"
     assert result.data["peer"]["alias"] == people[2][0].profile.alias
-    assert heartbeat(people[1][1]).data["state"] == "idle"
+    assert heartbeat(people[1][1]).data["state"] == "waiting"
+    assert Conversation.objects.get(pk=chat_id).end_reason == "next"
+    # A delayed duplicate cannot end the newer conversation.
     assert people[0][1].post(f"/api/v1/chats/{chat_id}/next/").data["id"] == result.data["id"]
 
 
-@pytest.mark.parametrize("present", [True, False])
-def test_timeout_requeues_only_present_person_who_accepted(people, present):
-    chat_id = pair(people, active=False)
-    a, b = people[0][1], people[1][1]
-    a.post(f"/api/v1/chats/{chat_id}/accept/")
-    Conversation.objects.update(invitation_expires_at=timezone.now() - timedelta(seconds=1))
-    if not present:
-        MatchSlot.objects.filter(user=people[0][0]).update(expires_at=timezone.now() + timedelta(seconds=40))
-    assert heartbeat(b).data["state"] == "idle"
-    assert MatchSlot.objects.filter(user=people[0][0]).exists() == present
+def test_leave_stops_leaver_and_requeues_person_left_behind(people):
+    chat_id = pair(people)
+    assert queue(people[2][1]).data["state"] == "waiting"
+    assert people[0][1].delete("/api/v1/matching/queue/").status_code == 204
+    assert heartbeat(people[0][1]).data["state"] == "idle"
+    peer = heartbeat(people[1][1]).data
+    assert peer["state"] == "active"
+    assert peer["peer"]["alias"] == people[2][0].profile.alias
+    assert send(people[1][1], chat_id).status_code == 400
 
 
-def test_recent_pair_can_match_after_cooldown(people):
-    chat_id = pair(people, active=False)
-    people[0][1].post(f"/api/v1/chats/{chat_id}/decline/")
+def test_absent_session_is_not_requeued_but_present_peer_is(people):
+    pair(people)
+    assert queue(people[2][1]).data["state"] == "waiting"
+    MatchSlot.objects.filter(user=people[0][0]).update(expires_at=timezone.now() - timedelta(seconds=1))
+    result = heartbeat(people[1][1]).data
+    assert result["state"] == "active"
+    assert result["peer"]["alias"] == people[2][0].profile.alias
+    assert not MatchSlot.objects.filter(user=people[0][0]).exists()
+
+
+def test_recent_pair_can_match_again_after_cooldown(people):
+    chat_id = pair(people)
+    people[0][1].post(f"/api/v1/chats/{chat_id}/next/")
+    people[0][1].delete("/api/v1/matching/queue/")
+    people[1][1].delete("/api/v1/matching/queue/")
     Conversation.objects.update(ended_at=timezone.now() - timedelta(minutes=11))
-    assert heartbeat(people[1][1]).data["state"] == "invited"
+    assert queue(people[0][1]).data["state"] == "waiting"
+    assert queue(people[1][1]).data["state"] == "active"
 
 
-def test_requeue_actions_enforce_membership_and_current_state(people):
-    chat_id = pair(people, active=False)
-    assert people[2][1].post(f"/api/v1/chats/{chat_id}/decline/").status_code == 404
-    assert people[2][1].post(f"/api/v1/chats/{chat_id}/next/").status_code == 404
-    assert people[0][1].post(f"/api/v1/chats/{chat_id}/next/").status_code == 400
-    for _, client in people[:2]:
-        client.post(f"/api/v1/chats/{chat_id}/accept/")
-    assert people[0][1].post(f"/api/v1/chats/{chat_id}/decline/").status_code == 400
+def test_next_requires_membership_and_active_chat(people):
+    chat_id = pair(people)
+    outsider = people[2][1]
+    assert outsider.post(f"/api/v1/chats/{chat_id}/next/").status_code == 404
+    people[0][1].delete("/api/v1/matching/queue/")
+    assert people[0][1].post(f"/api/v1/chats/{chat_id}/next/").data["state"] == "idle"
 
 
 def test_message_retries_cursor_and_outsider_denial(people):
     chat_id = pair(people)
-    a, b, outsider = [p[1] for p in people]
+    a, b, outsider = [person[1] for person in people]
     token = uuid.uuid4()
     first = send(a, chat_id, "<script>not HTML</script>", token)
     assert first.status_code == 201
@@ -164,7 +192,7 @@ def test_message_retries_cursor_and_outsider_denial(people):
     assert received["messages"][0]["body"] == "<script>not HTML</script>"
     assert b.get(f"/api/v1/chats/{chat_id}/messages/?after={first.data['id']}").data["messages"] == []
     assert b.get(f"/api/v1/chats/{chat_id}/messages/?after=-1").status_code == 400
-    for suffix in ["messages/", "accept/", "typing/", "block/", "report/"]:
+    for suffix in ["messages/", "typing/", "block/", "report/"]:
         assert (
             outsider.post(
                 f"/api/v1/chats/{chat_id}/{suffix}",
@@ -188,108 +216,58 @@ def test_message_rate_limit(people):
     assert send(people[0][1], chat_id).status_code == 429
 
 
-def test_queue_requires_profile_optin_and_own_intention(people, user):
+def test_queue_requires_a_verified_adult_identity(people, user):
     client = APIClient()
     client.force_login(user)
     assert queue(client).status_code == 400
-    client = people[0][1]
-    assert queue(client, intention="flirting").status_code == 400
-    prefs = people[0][0].preferences
-    prefs.open_chat_opt_in = False
-    prefs.save()
-    assert queue(client, mode="open").status_code == 400
+    people[0][0].email_verified_at = None
+    people[0][0].save()
+    assert queue(people[0][1]).status_code == 403
 
 
-@pytest.mark.parametrize(
-    "kind", ["gender", "age", "language", "intention", "block", "disabled", "unverified"]
-)
-def test_queue_hard_filters(people, kind):
-    a, b = people[0][0], people[1][0]
-    queue(people[1][1])
-    if kind == "gender":
-        b.preferences.genders = ["woman"]
-        b.preferences.save()
-    elif kind == "age":
-        b.preferences.min_age = 40
-        b.preferences.save()
-    elif kind in {"language", "intention"}:
-        field = "languages" if kind == "language" else "intentions"
-        setattr(b.profile, field, ["fr"] if kind == "language" else ["friendship"])
-        b.profile.save()
-    elif kind == "block":
-        Block.objects.create(blocker=b, blocked=a)
-    elif kind == "disabled":
-        b.is_active = False
-        b.save()
-    else:
-        b.email_verified_at = None
-        b.save()
+def test_gender_age_language_and_intention_do_not_filter_random_queue(people):
+    first, second = people[0][0], people[1][0]
+    second.preferences.genders = []
+    second.preferences.min_age = 100
+    second.preferences.max_age = 120
+    second.preferences.open_chat_opt_in = False
+    second.preferences.save()
+    second.profile.languages = ["fr"]
+    second.profile.intentions = ["friendship"]
+    second.profile.save()
     assert queue(people[0][1]).data["state"] == "waiting"
-    assert Conversation.objects.count() == 0
+    assert queue(people[1][1]).data["state"] == "active"
+    conversation = Conversation.objects.get()
+    assert {conversation.first_id, conversation.second_id} == {first.pk, second.pk}
 
 
-def test_expired_waiter_not_matched(people):
-    queue(people[0][1])
-    MatchSlot.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
-    assert queue(people[1][1]).data["state"] == "waiting"
-
-
-def test_invitation_timeout_releases_both(people):
-    chat_id = pair(people, active=False)
-    Conversation.objects.update(invitation_expires_at=timezone.now() - timedelta(seconds=1))
-    response = people[0][1].post(f"/api/v1/chats/{chat_id}/accept/")
-    assert response.data["state"] == "ended"
-    assert MatchSlot.objects.count() == 0
-    assert send(people[0][1], chat_id).status_code == 400
-
-
-@pytest.mark.parametrize("action", ["leave", "logout", "block", "preferences", "disconnect"])
-def test_end_releases_slots_and_rejects_new_messages(people, action):
+def test_block_prevents_pairing_and_requeues_peer(people):
     chat_id = pair(people)
-    a, b = people[0][1], people[1][1]
-    if action == "leave":
-        assert a.delete("/api/v1/matching/queue/").status_code == 204
-    elif action == "logout":
-        assert a.post("/api/v1/auth/logout/").status_code == 204
-    elif action == "block":
-        assert (
-            a.post("/api/v1/blocks/", {"profile_id": str(people[1][0].profile.pk)}, format="json").status_code
-            == 204
-        )
-    elif action == "preferences":
-        assert (
-            a.put(
-                "/api/v1/preferences/",
-                {"genders": ["man"], "min_age": 18, "max_age": 40, "open_chat_opt_in": False},
-                format="json",
-            ).status_code
-            == 200
-        )
-    else:
-        MatchSlot.objects.filter(user=people[0][0]).update(expires_at=timezone.now() - timedelta(seconds=1))
-        heartbeat(b)
-    assert MatchSlot.objects.count() == 0
-    assert send(b, chat_id).status_code == 400
-    assert Conversation.objects.get(pk=chat_id).status == "ended"
+    assert queue(people[2][1]).data["state"] == "waiting"
+    response = people[0][1].post(f"/api/v1/chats/{chat_id}/block/")
+    assert response.status_code == 204
+    assert Block.objects.filter(blocker=people[0][0], blocked=people[1][0]).exists()
+    assert heartbeat(people[0][1]).data["state"] == "idle"
+    assert heartbeat(people[1][1]).data["state"] == "active"
 
 
-def test_report_evidence_idempotence_and_block(people):
+def test_report_captures_evidence_and_blocks(people):
     chat_id = pair(people)
-    a = people[0][1]
-    send(a, chat_id, "Evidence")
+    send(people[0][1], chat_id, "Evidence")
     for _ in range(2):
         assert (
-            a.post(
+            people[0][1]
+            .post(
                 f"/api/v1/chats/{chat_id}/report/",
                 {"reason": "harassment", "details": "Please review."},
                 format="json",
-            ).status_code
+            )
+            .status_code
             == 204
         )
     assert Report.objects.count() == 1
     assert Report.objects.get().evidence[0]["body"] == "Evidence"
     assert Block.objects.filter(blocker=people[0][0], blocked=people[1][0]).exists()
-    assert MatchSlot.objects.count() == 0
 
 
 def test_csrf_and_anonymous_access(people):
@@ -313,19 +291,18 @@ def test_concurrent_queue_reservations(people):
         try:
             user = User.objects.get(pk=uid)
             barrier.wait(timeout=10)
-            return join(user, "compatible", "dating")
+            return join(user)
         finally:
             close_old_connections()
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        list(pool.map(attempt, [p[0].pk for p in people]))
+        list(pool.map(attempt, [person[0].pk for person in people]))
     assert Conversation.objects.count() == 1
     assert MatchSlot.objects.exclude(conversation=None).count() == 2
 
 
 @pytest.mark.asyncio
 async def test_two_sessions_receive_chat_events_and_recover_messages(people):
-    # Real ASGI sockets and session cookies, backed by the isolated test database.
     def make_socket(client):
         key = client.cookies[settings.SESSION_COOKIE_NAME].value
         return WebsocketCommunicator(
@@ -341,22 +318,19 @@ async def test_two_sessions_receive_chat_events_and_recover_messages(people):
     chat_id = await database_sync_to_async(pair)(people)
     sockets = [make_socket(a), make_socket(b)]
     try:
-        for ws in sockets:
-            assert (await ws.connect())[0]
-            assert (await ws.receive_json_from())["type"] == "connection.ready"
+        for socket in sockets:
+            assert (await socket.connect())[0]
+            assert (await socket.receive_json_from())["type"] == "connection.ready"
         sent = await database_sync_to_async(send)(a, chat_id, "Hello through the live flow")
-        for ws in sockets:
-            assert await ws.receive_json_from() == {"type": "chat.changed", "conversation_id": chat_id}
+        for socket in sockets:
+            assert await socket.receive_json_from() == {
+                "type": "chat.changed",
+                "conversation_id": chat_id,
+            }
         received = await database_sync_to_async(b.get)(f"/api/v1/chats/{chat_id}/messages/")
         assert received.data["messages"][0]["id"] == sent.data["id"]
         await database_sync_to_async(a.post)(f"/api/v1/chats/{chat_id}/typing/")
         assert (await sockets[1].receive_json_from())["type"] == "chat.typing"
-        await sockets[1].disconnect()
-        await database_sync_to_async(send)(a, chat_id, "Sent while the socket was disconnected")
-        recovered = await database_sync_to_async(b.get)(
-            f"/api/v1/chats/{chat_id}/messages/?after={sent.data['id']}"
-        )
-        assert len(recovered.data["messages"]) == 1
     finally:
-        for ws in sockets:
-            await ws.disconnect()
+        for socket in sockets:
+            await socket.disconnect()

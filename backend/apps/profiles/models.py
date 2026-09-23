@@ -15,7 +15,8 @@ class PrivateProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="private_profile"
     )
-    birth_date = models.DateField()
+    birth_date = models.DateField(null=True, blank=True)
+    adult_confirmed_at = models.DateTimeField(null=True, blank=True)
     policy_version = models.CharField(max_length=64)
     accepted_at = models.DateTimeField(auto_now_add=True)
 
@@ -31,6 +32,8 @@ class Profile(models.Model):
     languages = models.JSONField(default=list)
     conversation_style = models.CharField(max_length=24)
     prompt_answer = models.CharField(max_length=280, blank=True)
+    bio = models.CharField(max_length=300, blank=True)
+    discoverable = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
 

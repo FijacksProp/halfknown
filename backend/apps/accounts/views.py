@@ -36,7 +36,13 @@ class RequestCodeView(APIView):
     def post(self, request):
         data = EmailInput(data=request.data)
         data.is_valid(raise_exception=True)
-        challenge_id = request_code(data.validated_data["email"])
+        try:
+            challenge_id = request_code(
+                data.validated_data["email"],
+                guest_user=request.user if request.user.is_authenticated else None,
+            )
+        except ValueError as error:
+            raise serializers.ValidationError({"email": str(error)}) from error
         return Response(
             {
                 "challenge_id": str(challenge_id),
@@ -64,12 +70,14 @@ class VerifyCodeView(APIView):
 
 class MeView(APIView):
     def get(self, request):
+        guest = request.user.email.endswith("@guest.halfknown.invalid")
         return Response(
             {
                 "id": str(request.user.pk),
-                "email": request.user.email,
+                "email": "" if guest else request.user.email,
                 "email_verified": bool(request.user.email_verified_at),
                 "onboarding_complete": hasattr(request.user, "profile"),
+                "is_guest": guest,
             }
         )
 

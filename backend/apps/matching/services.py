@@ -93,7 +93,13 @@ def sweep():
             ]
             end_chat(chat, "expired", requeue=continuing)
         else:
-            end_chat(chat, "disconnected")
+            continuing = list(
+                MatchSlot.objects.filter(
+                    conversation=chat,
+                    expires_at__gt=now + timedelta(seconds=LEASE_SECONDS - PRESENT_SECONDS),
+                ).values_list("user_id", flat=True)
+            )
+            end_chat(chat, "disconnected", requeue=continuing)
 
 
 def fresh_user(uid):
@@ -105,17 +111,19 @@ def ready_user(user):
         not user.is_active
         or not user.email_verified_at
         or not all(hasattr(user, field) for field in ("profile", "private_profile", "preferences"))
-        or age_on(user.private_profile.birth_date, timezone.localdate()) < 18
+        or not (
+            user.private_profile.adult_confirmed_at
+            or (
+                user.private_profile.birth_date
+                and age_on(user.private_profile.birth_date, timezone.localdate()) >= 18
+            )
+        )
     ):
         raise ValidationError("Complete your verified adult profile first.")
 
 
-def queue_valid(user, mode, intention):
+def queue_valid(user, mode="random", intention="conversation"):
     ready_user(user)
-    if mode not in {"open", "compatible"} or intention not in user.profile.intentions:
-        raise ValidationError("Choose a mode and an intention from your profile.")
-    if mode == "open" and not user.preferences.open_chat_opt_in:
-        raise ValidationError("Enable Open Chat in your preferences first.")
 
 
 def chat_for(user, chat_id):
@@ -137,9 +145,9 @@ def try_pair(slot):
     recent = Conversation.objects.filter(ended_at__gt=timezone.now() - REMATCH_COOLDOWN)
     excluded = set(recent.filter(first=user).values_list("second_id", flat=True))
     excluded.update(recent.filter(second=user).values_list("first_id", flat=True))
-    # Bounded FIFO candidate band. Random for Open Chat; shared interests rank Compatible.
+    # Bounded FIFO band, then a random draw within it.
     candidates = list(
-        MatchSlot.objects.filter(conversation=None, mode=slot.mode, intention=slot.intention)
+        MatchSlot.objects.filter(conversation=None, mode="random")
         .exclude(user=user)
         .exclude(user_id__in=excluded)
         .select_related("user__profile", "user__private_profile", "user__preferences")
@@ -148,15 +156,15 @@ def try_pair(slot):
     candidates = [c for c in candidates if eligible(user, c.user, mode=slot.mode, intention=slot.intention)]
     if not candidates:
         return
-    if slot.mode == "compatible":
-        scores = [len(set(user.profile.interests) & set(c.user.profile.interests)) for c in candidates]
-        candidates = [c for c, score in zip(candidates, scores) if score == max(scores)]
     other = secrets.choice(candidates)
     chat = Conversation.objects.create(
         first=user,
         second=other.user,
-        mode=slot.mode,
-        intention=slot.intention,
+        mode="random",
+        intention="conversation",
+        status="active",
+        first_accepted=True,
+        second_accepted=True,
         invitation_expires_at=timezone.now() + timedelta(seconds=45),
     )
     MatchSlot.objects.filter(user_id__in=[user.pk, other.user_id]).update(conversation=chat)
@@ -175,7 +183,6 @@ def snapshot(user):
 def chat_snapshot(chat, user):
     peer_id = chat.second_id if chat.first_id == user.pk else chat.first_id
     peer = fresh_user(peer_id).profile
-    own = fresh_user(user.pk).profile
     return {
         "state": chat.status,
         "id": str(chat.pk),
@@ -187,15 +194,16 @@ def chat_snapshot(chat, user):
         "peer": {
             "alias": peer.alias,
             "avatar_id": peer.avatar_id,
-            "shared_interests": sorted(set(own.interests) & set(peer.interests)),
+            "shared_interests": [],
         },
     }
 
 
-def join(user, mode, intention):
+def join(user, mode="random", intention="conversation"):
     with match_lock():
         sweep()
-        queue_valid(fresh_user(user.pk), mode, intention)
+        mode, intention = "random", "conversation"
+        queue_valid(fresh_user(user.pk))
         slot = MatchSlot.objects.filter(user=user).first()
         if slot:
             return snapshot(user)
@@ -238,7 +246,12 @@ def leave(user):
     with match_lock():
         slot = MatchSlot.objects.filter(user=user).select_related("conversation").first()
         if slot and slot.conversation:
-            end_chat(slot.conversation, "left")
+            chat = slot.conversation
+            peer_id = chat.second_id if chat.first_id == user.pk else chat.first_id
+            end_chat(chat, "left", requeue=[peer_id])
+            peer_slot = MatchSlot.objects.filter(user_id=peer_id, conversation=None).first()
+            if peer_slot:
+                try_pair(peer_slot)
         elif slot:
             slot.delete()
         notify([user.pk])
@@ -251,14 +264,14 @@ def next_person(user, chat_id, *, decline=False):
         # A stale request cannot end a newer chat or restart an explicitly stopped search.
         if chat.status == "ended":
             return snapshot(user)
-        expected = "invited" if decline else "active"
-        if chat.status != expected:
+        if chat.status != "active":
             raise ValidationError("This introduction has changed. Refresh to continue.")
         MatchSlot.objects.filter(user=user, conversation=chat).update(
             expires_at=timezone.now() + timedelta(seconds=LEASE_SECONDS)
         )
-        continuing = [chat.first_id, chat.second_id] if decline else [user.pk]
-        end_chat(chat, "declined" if decline else "next", requeue=continuing)
+        peer_id = chat.second_id if chat.first_id == user.pk else chat.first_id
+        continuing = [user.pk, peer_id]
+        end_chat(chat, "next", requeue=continuing)
         for uid in continuing:
             slot = MatchSlot.objects.filter(user_id=uid, conversation=None).first()
             if slot:
@@ -324,7 +337,10 @@ def block_peer(user, target_id):
         for chat in Conversation.objects.filter(
             Q(first=user, second_id=target_id) | Q(second=user, first_id=target_id)
         ).exclude(status="ended"):
-            end_chat(chat, "unavailable")
+            end_chat(chat, "unavailable", requeue=[target_id])
+            peer_slot = MatchSlot.objects.filter(user_id=target_id, conversation=None).first()
+            if peer_slot:
+                try_pair(peer_slot)
 
 
 def typing(user, chat_id):

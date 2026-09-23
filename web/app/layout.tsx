@@ -1,34 +1,27 @@
 import type { Metadata } from 'next';
-import { Lora, DM_Sans } from 'next/font/google';
+import { Fraunces, Nunito_Sans } from 'next/font/google';
 import './globals.css';
+import './social.css';
 
-const bodyFont = DM_Sans({
-  variable: '--font-body',
-  subsets: ['latin'],
-});
-
-const headingFont = Lora({
+const bodyFont = Nunito_Sans({ variable: '--font-body', subsets: ['latin'] });
+const headingFont = Fraunces({
   variable: '--font-display',
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: 'halfknown — A little unknown. A lot to discover.',
+  title: 'Halfknown — Come curious. Leave connected.',
   description:
-    'A personality-first space for dating, friendship, and unexpected conversations. Meet someone new while keeping your identity private.',
+    'Discover people, share what makes you interesting, and build connections that go beyond the first hello.',
   icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body
-        className={`${bodyFont.variable} ${headingFont.variable} antialiased`}
-      >
+      <body className={`${bodyFont.variable} ${headingFont.variable}`}>
         {children}
       </body>
     </html>

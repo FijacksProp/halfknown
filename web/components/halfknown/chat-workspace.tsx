@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight,
+  Dice5,
+  Flag,
   Heart,
-  MessageCircle,
   Send,
-  ShieldCheck,
+  SkipForward,
+  UserRoundX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,34 +17,25 @@ import {
 } from '@/components/ui/native-select';
 import {
   AlertDialog,
+  AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogCancel,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
   api,
   type Chat,
   type ChatMessage,
-  type MatchMode,
   type MatchState,
   type SavedProfile,
+  type SocialConnection,
 } from '@/lib/api';
-import { label } from '@/lib/onboarding';
+import { Avatar } from './avatar';
 
-export function ChatWorkspace({
-  saved,
-  onPreferences,
-}: {
-  saved: SavedProfile;
-  onPreferences: () => void;
-}) {
+export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
   const [state, setState] = useState<MatchState>({ state: 'idle' });
-  const [intention, setIntention] = useState(
-    saved.profile.intentions[0] ?? 'conversation',
-  );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -52,59 +44,51 @@ export function ChatWorkspace({
   const [loaded, setLoaded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
-  const [safety, setSafety] = useState<
-    'leave' | 'next' | 'block' | 'report' | null
-  >(null);
+  const [connection, setConnection] = useState<SocialConnection | null>(null);
+  const [dialog, setDialog] = useState<'leave' | 'block' | 'report' | null>(
+    null,
+  );
   const [reason, setReason] = useState('harassment');
   const [details, setDetails] = useState('');
-  const [now, setNow] = useState(() => Date.now());
   const currentChat = useRef<Chat | null>(null);
   const cursor = useRef(0);
-  const refreshing = useRef(false);
-  const refreshAgain = useRef(false);
-  const working = useRef(false);
   const mounted = useRef(false);
+  const working = useRef(false);
+  const refreshing = useRef(false);
   const revision = useRef(0);
-  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTyping = useRef(0);
   const pending = useRef<{ id: string; body: string; chat: string } | null>(
     null,
   );
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTyping = useRef(0);
   const scrollArea = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(async function syncConversation() {
-    if (!mounted.current || working.current) return;
-    if (refreshing.current) {
-      refreshAgain.current = true;
-      return;
-    }
+  const refresh = useCallback(async () => {
+    if (!mounted.current || working.current || refreshing.current) return;
     refreshing.current = true;
     const epoch = revision.current;
     try {
       const next = await api.heartbeat();
       if (!mounted.current || epoch !== revision.current) return;
-      const chat =
-        'id' in next
-          ? next
-          : next.state === 'idle'
-            ? currentChat.current
-            : null;
-      if (chat) {
-        if (currentChat.current?.id !== chat.id) {
+      if ('id' in next) {
+        if (currentChat.current?.id !== next.id) {
           cursor.current = 0;
           setMessages([]);
           setDraft('');
           pending.current = null;
-          setPeerTyping(false);
+          setConnection(null);
+          setNotice('A stranger joined. Say hello when you’re ready.');
         }
-        currentChat.current = chat;
+        currentChat.current = next;
         let more = true;
         while (more) {
-          const page = await api.messages(chat.id, cursor.current);
+          const page = await api.messages(next.id, cursor.current);
           if (!mounted.current || epoch !== revision.current) return;
           setMessages((previous) => {
-            const unique = new Map(previous.map((m) => [m.id, m]));
-            page.messages.forEach((m) => unique.set(m.id, m));
+            const unique = new Map(
+              previous.map((message) => [message.id, message]),
+            );
+            page.messages.forEach((message) => unique.set(message.id, message));
             return [...unique.values()].sort((a, b) => a.id - b.id).slice(-500);
           });
           cursor.current = page.messages.at(-1)?.id ?? cursor.current;
@@ -112,25 +96,32 @@ export function ChatWorkspace({
           currentChat.current = page.conversation;
           setState(page.conversation);
         }
+        if (next.state === 'active') {
+          const result = await api.quickConnectionState(next.id);
+          if (!mounted.current || epoch !== revision.current) return;
+          setConnection(result.connection);
+        }
       } else {
+        if (currentChat.current && next.state === 'waiting') {
+          setNotice('That conversation ended. Looking for someone new…');
+        }
         currentChat.current = null;
         cursor.current = 0;
+        setMessages([]);
+        setConnection(null);
         setState(next);
       }
       setLoaded(true);
-    } catch (err) {
+      setError('');
+    } catch (reason) {
       if (mounted.current && epoch === revision.current)
         setError(
-          err instanceof Error
-            ? err.message
-            : 'Could not update your conversation.',
+          reason instanceof Error
+            ? reason.message
+            : 'Could not update the chat.',
         );
     } finally {
       refreshing.current = false;
-      if (refreshAgain.current && mounted.current) {
-        refreshAgain.current = false;
-        setTimeout(() => void syncConversation(), 0);
-      }
     }
   }, []);
 
@@ -145,13 +136,10 @@ export function ChatWorkspace({
         `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/events/`,
       );
       socket.onopen = () => {
-        if (!stopped) {
-          setConnected(true);
-          void refresh();
-        }
+        setConnected(true);
+        void refresh();
       };
       socket.onmessage = (event) => {
-        if (stopped) return;
         try {
           const data = JSON.parse(event.data);
           if (
@@ -160,34 +148,31 @@ export function ChatWorkspace({
           ) {
             setPeerTyping(true);
             if (typingTimer.current) clearTimeout(typingTimer.current);
-            typingTimer.current = setTimeout(() => setPeerTyping(false), 4000);
+            typingTimer.current = setTimeout(() => setPeerTyping(false), 3500);
           } else if (
             data.type === 'chat.changed' ||
-            data.type === 'match.changed'
+            data.type === 'match.changed' ||
+            data.type === 'connection.changed'
           )
             void refresh();
         } catch {
-          /* Ignore malformed notifications; REST remains authoritative. */
+          /* REST sync remains authoritative. */
         }
       };
       socket.onclose = (event) => {
-        if (stopped) return;
         setConnected(false);
-        if (event.code !== 4401) reconnect = setTimeout(connect, 3000);
-        else setError('Your session ended. Sign in again to continue.');
+        if (!stopped && event.code !== 4401)
+          reconnect = setTimeout(connect, 3000);
       };
       socket.onerror = () => socket?.close();
     };
     connect();
-    const initialRefresh = setTimeout(() => void refresh(), 0);
-    const poll = setInterval(() => void refresh(), 10000);
-    const clock = setInterval(() => setNow(Date.now()), 1000);
+    const initial = setTimeout(() => void refresh(), 0);
+    const poll = setInterval(() => void refresh(), 8000);
     const ping = setInterval(() => {
       if (socket?.readyState === WebSocket.OPEN)
         socket.send(JSON.stringify({ type: 'ping' }));
     }, 20000);
-    const online = () => void refresh();
-    window.addEventListener('online', online);
     return () => {
       stopped = true;
       mounted.current = false;
@@ -195,32 +180,31 @@ export function ChatWorkspace({
       socket?.close();
       if (reconnect) clearTimeout(reconnect);
       if (typingTimer.current) clearTimeout(typingTimer.current);
-      clearTimeout(initialRefresh);
+      clearTimeout(initial);
       clearInterval(poll);
-      clearInterval(clock);
       clearInterval(ping);
-      window.removeEventListener('online', online);
     };
   }, [refresh]);
 
   useEffect(() => {
     const area = scrollArea.current;
-    if (area && area.scrollHeight - area.scrollTop - area.clientHeight < 250)
+    if (area && area.scrollHeight - area.scrollTop - area.clientHeight < 220)
       area.scrollTop = area.scrollHeight;
   }, [messages]);
 
-  async function action(work: () => Promise<unknown>) {
+  async function action(work: () => Promise<void>) {
     if (working.current) return;
     working.current = true;
     revision.current += 1;
     setBusy(true);
     setError('');
-    setNotice('');
     try {
       await work();
-    } catch (err) {
+    } catch (reason) {
       if (mounted.current)
-        setError(err instanceof Error ? err.message : 'Please try again.');
+        setError(
+          reason instanceof Error ? reason.message : 'Please try again.',
+        );
     } finally {
       working.current = false;
       if (mounted.current) {
@@ -230,481 +214,379 @@ export function ChatWorkspace({
     }
   }
 
-  function join(mode: MatchMode) {
+  function resetConversation(result: MatchState) {
+    currentChat.current = 'id' in result ? result : null;
+    cursor.current = 0;
+    pending.current = null;
+    setMessages([]);
+    setDraft('');
+    setPeerTyping(false);
+    setConnection(null);
+    setState(result);
+  }
+
+  function start() {
     void action(async () => {
-      const result = await api.joinQueue(mode, intention);
-      currentChat.current = null;
-      cursor.current = 0;
-      pending.current = null;
-      setMessages([]);
-      setDraft('');
-      setState(result);
+      resetConversation(await api.joinQueue());
+      setNotice('Looking through everyone online right now…');
+    });
+  }
+
+  function next() {
+    if (!('id' in state)) return;
+    const chatId = state.id;
+    void action(async () => {
+      resetConversation(await api.nextPerson(chatId));
+      setNotice('Shuffling for someone new…');
+    });
+  }
+
+  function keepInTouch() {
+    if (state.state !== 'active') return;
+    void action(async () => {
+      const result = await api.quickConnect(state.id);
+      setConnection(result);
+      setNotice('');
+    });
+  }
+
+  function declineKeepInTouch() {
+    if (state.state !== 'active' || connection?.direction !== 'incoming')
+      return;
+    const chatId = state.id;
+    void action(async () => {
+      await api.declineQuickConnection(chatId);
+      setConnection(null);
+      setNotice(
+        'You passed on that request. You can keep chatting or move on.',
+      );
     });
   }
 
   function send() {
     if (state.state !== 'active' || !draft.trim() || busy) return;
-    const chatId = state.id;
     const body = draft.trim();
+    const chatId = state.id;
     if (
       !pending.current ||
       pending.current.body !== body ||
       pending.current.chat !== chatId
-    ) {
+    )
       pending.current = { id: crypto.randomUUID(), body, chat: chatId };
-    }
     const attempt = pending.current;
     void action(async () => {
       const message = await api.sendMessage(chatId, attempt.id, body);
       setMessages((previous) =>
-        [...previous.filter((m) => m.id !== message.id), message]
-          .sort((a, b) => a.id - b.id)
-          .slice(-500),
+        [...previous.filter((item) => item.id !== message.id), message].sort(
+          (a, b) => a.id - b.id,
+        ),
       );
       setDraft('');
       pending.current = null;
-      setNotice('Message saved.');
     });
   }
 
-  function confirmSafety() {
-    const selected = safety;
+  function confirmDialog() {
+    const selected = dialog;
     const chat = 'id' in state ? state : null;
     void action(async () => {
       if (selected === 'report' && chat) {
         await api.reportChat(chat.id, reason, details);
-        setNotice('Report saved for staff review. This person is now blocked.');
+        setNotice(
+          'Report received. You will not be matched with this person again.',
+        );
       } else if (selected === 'block' && chat) {
         await api.blockChat(chat.id);
-        setNotice('This person is now blocked.');
-      } else if (selected === 'next' && chat) {
-        const result = await api.nextPerson(chat.id);
-        currentChat.current = null;
-        cursor.current = 0;
-        pending.current = null;
-        setMessages([]);
-        setDraft('');
-        setState(result);
-        setNotice(
-          'Looking for another introduction with the same preferences.',
-        );
-        setSafety(null);
-        return;
-      } else await api.leaveChat();
-      setSafety(null);
+        setNotice('Blocked. You will not be matched with this person again.');
+      } else {
+        await api.leaveChat();
+        setNotice('You left the queue.');
+      }
+      setDialog(null);
       setDetails('');
-      if (chat) setState({ ...chat, state: 'ended' });
-      else setState({ state: 'idle' });
+      resetConversation({ state: 'idle' });
     });
   }
 
   const chat = 'id' in state ? state : null;
-  const canJoin = state.state === 'idle' || state.state === 'ended';
-  const seconds = chat
-    ? Math.max(0, Math.ceil((Date.parse(chat.expires_at) - now) / 1000))
-    : 0;
 
   return (
-    <section className="chat-workspace" aria-labelledby="chat-title">
-      <div className="chat-heading">
-        <div>
-          <span className="eyebrow">Hello, {saved.profile.alias}</span>
-          <h1 id="chat-title">Who will you meet?</h1>
-        </div>
-        <output className="connection-status">
-          {connected ? 'Connected' : 'Reconnecting…'}
-        </output>
-      </div>
-      <p className="chat-privacy">
-        <ShieldCheck size={18} aria-hidden="true" />
-        18+ only. Messages are stored on the server, not end-to-end encrypted.
-        Reports share the latest 20 messages with staff.
-      </p>
+    <section className="chat-workspace" aria-label="Random chat">
+      {!connected && loaded && (
+        <output className="quick-reconnect">Reconnecting to chat…</output>
+      )}
+
       {error && (
         <div className="form-error" role="alert">
-          {error}{' '}
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setError('');
-              void refresh();
-            }}
-          >
-            Refresh
-          </Button>
+          {error} <button onClick={() => void refresh()}>Try again</button>
         </div>
       )}
       {notice && <output className="chat-notice">{notice}</output>}
-      {!loaded && <output>Checking for an existing conversation…</output>}
-      {state.state === 'ended' && (
-        <output className="chat-ended">
-          This conversation has ended
-          {state.end_reason === 'disconnected'
-            ? ' because someone lost connection'
-            : state.end_reason === 'expired'
-              ? ' because the invitation expired'
-              : ''}
-          . You can report or block it below, or choose another introduction.
-        </output>
+      {!loaded && (
+        <output className="loading-line">Checking your session…</output>
       )}
-      {canJoin && (
-        <>
-          <label className="chat-intention">
-            What are you here for today?
-            <NativeSelect
-              value={intention}
-              onChange={(event) => setIntention(event.target.value)}
-            >
-              {saved.profile.intentions.map((value) => (
-                <NativeSelectOption key={value} value={value}>
-                  {label(value)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-          <div className="mode-grid">
-            <div className="mode-card mode-card-open">
-              <MessageCircle aria-hidden="true" />
-              <h2 className="mode-title">Open Chat</h2>
-              <p className="mode-description">
-                Meet an eligible adult who also opted in. Gender filters don’t
-                apply; age limits, language, intention, and blocks still do.
-              </p>
-              <Button
-                className="join-button"
-                disabled={
-                  busy || !loaded || !saved.preferences.open_chat_opt_in
-                }
-                onClick={() => join('open')}
-              >
-                {saved.preferences.open_chat_opt_in
-                  ? 'Find an introduction'
-                  : 'Enable in preferences'}
-                <ArrowRight aria-hidden="true" />
-              </Button>
-            </div>
-            <div className="mode-card mode-card-match">
-              <Heart aria-hidden="true" />
-              <h2 className="mode-title">Compatible Match</h2>
-              <p className="mode-description">
-                Mutual gender and age preferences, a shared language, and your
-                chosen intention. Shared interests help choose between eligible
-                people.
-              </p>
-              <Button
-                className="join-button"
-                disabled={busy || !loaded}
-                onClick={() => join('compatible')}
-              >
-                Find an introduction
-                <ArrowRight aria-hidden="true" />
-              </Button>
-            </div>
+
+      {(state.state === 'idle' || state.state === 'ended') && loaded && (
+        <div className="start-panel">
+          <div className="quick-intro-copy">
+            <span className="section-kicker">THE NEXT HELLO IS A SURPRISE</span>
+            <h2>Some conversations start by chance.</h2>
+            <p>
+              Meet one person at a time. You can stay anonymous, move on, or
+              choose together to keep talking.
+            </p>
+            <Button className="round-action" disabled={busy} onClick={start}>
+              Start a random chat <Dice5 aria-hidden="true" />
+            </Button>
+            <p className="chat-privacy">
+              Chats are stored and aren’t end-to-end encrypted. You can block or
+              report anyone.
+            </p>
           </div>
-          <Button
-            variant="outline"
-            className="edit-profile"
-            disabled={busy}
-            onClick={onPreferences}
-          >
-            Edit matching preferences
-          </Button>
-        </>
+          <div className="quick-intro-art" aria-hidden="true">
+            <Avatar
+              id="alien-01"
+              className="quick-intro-avatar quick-intro-avatar--first"
+            />
+            <Avatar
+              id="human-02"
+              className="quick-intro-avatar quick-intro-avatar--second"
+            />
+          </div>
+        </div>
       )}
+
       {state.state === 'waiting' && (
         <div className="waiting-panel">
-          <span className="eyebrow">
-            {label(state.mode)} · {label(state.intention)}
-          </span>
-          <h2>Waiting for someone eligible</h2>
+          <div className="quick-waiting-avatars" aria-hidden="true">
+            <Avatar id={saved.profile.avatar_id} />
+            <span className="quick-waiting-line" />
+            <Avatar id="goblin-01" />
+          </div>
+          <span className="section-kicker">LOOKING AROUND</span>
+          <h2>Finding your next hello…</h2>
           <p>
-            Keep this page open. We won’t relax your boundaries to make a match.
-            There may be nobody else online yet.
+            Keep this tab open. We’ll introduce you when someone is available.
           </p>
           <Button
-            variant="outline"
+            className="outline-action"
             disabled={busy}
-            onClick={() =>
-              void action(async () => {
-                await api.leaveChat();
-                setState({ state: 'idle' });
-              })
-            }
+            onClick={() => setDialog('leave')}
           >
             Stop searching
           </Button>
         </div>
       )}
-      {state.state === 'invited' && (
-        <div className="invitation-panel">
-          <span className="eyebrow">
-            An introduction for you · {seconds}s remaining
-          </span>
-          <h2>Meet {state.peer.alias}</h2>
-          <p>
-            {state.peer.shared_interests.length
-              ? `You both like ${state.peer.shared_interests.map(label).join(', ')}.`
-              : `You’re both here for ${label(state.intention).toLowerCase()}.`}
-          </p>
-          <p>
-            Chat opens only when you both accept. No real names or photos
-            required.
-          </p>
-          <div className="chat-actions">
-            <Button
-              disabled={busy || state.accepted || seconds === 0}
-              onClick={() =>
-                void action(async () => {
-                  setState(await api.acceptChat(state.id));
-                })
-              }
-            >
-              {state.accepted
-                ? 'Waiting for their answer…'
-                : 'Accept introduction'}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() =>
-                void action(async () => {
-                  const result = await api.declineChat(state.id);
-                  currentChat.current = null;
-                  cursor.current = 0;
-                  setMessages([]);
-                  setDraft('');
-                  setState(result);
-                  setNotice(
-                    'Looking for another introduction with the same preferences.',
-                  );
-                })
-              }
-            >
-              Decline &amp; keep searching
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setSafety('leave')}
-            >
-              Stop searching
-            </Button>
-          </div>
-        </div>
-      )}
-      {chat && (state.state === 'active' || state.state === 'ended') && (
+
+      {chat && state.state === 'active' && (
         <div className="conversation-panel">
           <header className="conversation-header">
-            <div>
-              <h2>{chat.peer.alias}</h2>
-              <span>
-                {label(chat.intention)} ·{' '}
-                {state.state === 'active'
-                  ? 'Conversation open'
-                  : 'Conversation ended'}
-              </span>
+            <div className="quick-peer">
+              <Avatar id={chat.peer.avatar_id} size="small" />
+              <div>
+                <span>YOUR RANDOM CHAT</span>
+                <h2>{chat.peer.alias}</h2>
+              </div>
             </div>
-            <div className="chat-actions">
-              {state.state === 'active' && (
-                <Button disabled={busy} onClick={() => setSafety('next')}>
-                  Next person
-                </Button>
-              )}
-              {state.state === 'active' && (
+            <div className="quick-chat-actions">
+              {connection?.direction !== 'incoming' && (
                 <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => setSafety('leave')}
+                  className="keep-button"
+                  disabled={busy || connection !== null}
+                  onClick={keepInTouch}
                 >
-                  Leave
+                  <Heart aria-hidden="true" />{' '}
+                  {connection?.status === 'accepted'
+                    ? 'In your connections'
+                    : connection?.status === 'declined'
+                      ? 'Not this time'
+                      : connection?.status === 'pending'
+                        ? 'Request sent'
+                        : 'Keep in touch'}
                 </Button>
               )}
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => setSafety('block')}
-              >
-                Block
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => setSafety('report')}
-              >
-                Report
+              <Button className="next-button" disabled={busy} onClick={next}>
+                Next <SkipForward aria-hidden="true" />
               </Button>
             </div>
           </header>
-          <div
-            className="message-list"
-            ref={scrollArea}
-            role="log"
-            aria-label="Conversation messages"
-            aria-live="polite"
-            aria-relevant="additions text"
-          >
-            {messages.length === 0 && (
-              <p className="message-empty">
-                {state.state === 'active'
-                  ? 'You both said yes. Say hello when you’re ready.'
-                  : 'No messages were exchanged.'}
-              </p>
+          {connection?.status === 'pending' &&
+            connection.direction === 'incoming' && (
+              <div className="quick-connection-request" role="status">
+                <div>
+                  <strong>{chat.peer.alias} wants to keep in touch.</strong>
+                  <p>
+                    If you both agree, you can find each other in Connections.
+                  </p>
+                </div>
+                <div className="quick-request-actions">
+                  <Button disabled={busy} onClick={keepInTouch}>
+                    Keep in touch
+                  </Button>
+                  <Button disabled={busy} onClick={declineKeepInTouch}>
+                    Not now
+                  </Button>
+                </div>
+              </div>
             )}
-            {messages.length >= 500 && (
-              <p className="message-empty">Showing the latest 500 messages.</p>
+          {connection?.status === 'pending' &&
+            connection.direction === 'outgoing' && (
+              <div className="quick-connection-note" role="status">
+                Your request is with {chat.peer.alias}. They can decide whether
+                to keep in touch.
+              </div>
+            )}
+          {connection?.status === 'accepted' && (
+            <div className="quick-connection-note" role="status">
+              You both chose to keep in touch. Find each other in Connections.
+            </div>
+          )}
+          {connection?.status === 'declined' && (
+            <div className="quick-connection-note" role="status">
+              Your request wasn’t accepted. You can keep chatting or move on.
+            </div>
+          )}
+          <div className="message-list" ref={scrollArea} aria-live="polite">
+            {messages.length === 0 && (
+              <div className="message-empty">
+                <strong>Your chat starts here.</strong>
+                <p>Say hello or ask something you’re curious about.</p>
+              </div>
             )}
             {messages.map((message) => (
               <article
                 className={`chat-message ${message.mine ? 'is-mine' : ''}`}
                 key={message.id}
               >
-                <span className="message-author">
-                  {message.mine ? 'You' : chat.peer.alias}
-                </span>
+                <span>{message.mine ? 'YOU' : chat.peer.alias}</span>
                 <p>{message.body}</p>
-                <small>
+                <time>
                   {new Date(message.created_at).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                   })}
-                  {message.mine ? ' · Saved' : ''}
-                </small>
+                </time>
               </article>
             ))}
           </div>
-          {state.state === 'active' && (
-            <form
-              className="message-composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                send();
+          <div className="message-composer">
+            <div className="typing-status">
+              {peerTyping ? 'Stranger is typing…' : ' '}
+            </div>
+            <Textarea
+              value={draft}
+              maxLength={2000}
+              rows={2}
+              placeholder="Type what you actually want to say…"
+              onChange={(event) => {
+                setDraft(event.target.value);
+                if (Date.now() - lastTyping.current > 2500) {
+                  lastTyping.current = Date.now();
+                  void api.typing(chat.id).catch(() => undefined);
+                }
               }}
-            >
-              <output className="typing-status">
-                {peerTyping
-                  ? `${chat.peer.alias} is typing…`
-                  : 'Take your time. Share only what feels right.'}
-              </output>
-              <label className="sr-only" htmlFor="chat-message">
-                Your message
-              </label>
-              <Textarea
-                id="chat-message"
-                value={draft}
-                maxLength={2000}
-                disabled={busy}
-                placeholder="Say hello…"
-                onChange={(event) => {
-                  setDraft(event.target.value);
-                  if (
-                    Date.now() - lastTyping.current > 3000 &&
-                    event.target.value.trim()
-                  ) {
-                    lastTyping.current = Date.now();
-                    void api.typing(chat.id).catch(() => {});
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    send();
-                  }
-                }}
-              />
-              <div className="composer-bottom">
-                <small>
-                  {draft.length}/2000 · Shift + Enter for a new line
-                </small>
-                <Button type="submit" disabled={busy || !draft.trim()}>
-                  <Send size={16} aria-hidden="true" />
-                  {busy ? 'Sending…' : 'Send'}
-                </Button>
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <div className="composer-bottom">
+              <div className="safety-actions">
+                <button onClick={() => setDialog('report')}>
+                  <Flag aria-hidden="true" /> Report
+                </button>
+                <button onClick={() => setDialog('block')}>
+                  <UserRoundX aria-hidden="true" /> Block
+                </button>
+                <button onClick={() => setDialog('leave')}>Leave</button>
               </div>
-            </form>
-          )}
+              <Button
+                aria-label="Send message"
+                disabled={busy || !draft.trim()}
+                onClick={send}
+              >
+                <Send aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
+
       <AlertDialog
-        open={safety !== null}
+        open={dialog !== null}
         onOpenChange={(open) => {
-          if (!open && !busy) setSafety(null);
+          if (!open) setDialog(null);
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {safety === 'report'
-                ? 'Report and block this person?'
-                : safety === 'block'
-                  ? 'Block this person?'
-                  : safety === 'next'
-                    ? 'Meet someone else?'
-                    : 'Leave and stop searching?'}
+              {dialog === 'report'
+                ? 'Report this conversation?'
+                : dialog === 'block'
+                  ? 'Block this stranger?'
+                  : 'Stop chatting?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {safety === 'report'
-                ? 'Your report includes the latest 20 messages and the details below. Staff can review it. The conversation ends and you won’t match with this person again.'
-                : safety === 'block'
-                  ? 'The conversation ends and neither of you can match with the other again.'
-                  : safety === 'next'
-                    ? 'This conversation will end and we’ll search again using the same mode and intention.'
-                    : 'This conversation will end. You won’t be placed back in the queue.'}
+              {dialog === 'report'
+                ? 'A moderator can review the latest 20 messages. The stranger will also be blocked.'
+                : dialog === 'block'
+                  ? 'You will not be paired with this identity again.'
+                  : 'You will leave the conversation and the random queue.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {safety === 'report' && (
-            <>
-              <label className="form-field">
+          {dialog === 'report' && (
+            <div className="report-fields">
+              <label htmlFor="quick-report-reason">
                 Reason
                 <NativeSelect
+                  id="quick-report-reason"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                 >
-                  {[
-                    'harassment',
-                    'sexual_content',
-                    'underage',
-                    'spam',
-                    'threats',
-                    'other',
-                  ].map((value) => (
-                    <NativeSelectOption key={value} value={value}>
-                      {label(value)}
-                    </NativeSelectOption>
-                  ))}
+                  <NativeSelectOption value="harassment">
+                    Harassment
+                  </NativeSelectOption>
+                  <NativeSelectOption value="sexual_content">
+                    Sexual content
+                  </NativeSelectOption>
+                  <NativeSelectOption value="underage">
+                    Possible underage user
+                  </NativeSelectOption>
+                  <NativeSelectOption value="spam">
+                    Spam or scam
+                  </NativeSelectOption>
+                  <NativeSelectOption value="threats">
+                    Threats
+                  </NativeSelectOption>
+                  <NativeSelectOption value="other">Other</NativeSelectOption>
                 </NativeSelect>
               </label>
-              <label className="form-field" htmlFor="report-details">
-                Details (optional)
+              <label htmlFor="quick-report-details">
+                Optional details
                 <Textarea
-                  id="report-details"
+                  id="quick-report-details"
                   maxLength={2000}
                   value={details}
                   onChange={(event) => setDetails(event.target.value)}
                 />
               </label>
-            </>
-          )}
-          {error && (
-            <p role="alert" className="form-error">
-              {error}
-            </p>
+            </div>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Go back</AlertDialogCancel>
-            <Button disabled={busy} onClick={confirmSafety}>
-              {busy
-                ? 'Saving…'
-                : safety === 'report'
-                  ? 'Submit report and block'
-                  : safety === 'block'
-                    ? 'Block person'
-                    : safety === 'next'
-                      ? 'Next person'
-                      : 'Leave'}
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={busy}
+              onClick={confirmDialog}
+            >
+              {dialog === 'report'
+                ? 'Send report'
+                : dialog === 'block'
+                  ? 'Block'
+                  : 'Leave'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

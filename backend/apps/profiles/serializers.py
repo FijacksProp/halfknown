@@ -78,6 +78,8 @@ class ProfileOutput(serializers.ModelSerializer):
             "languages",
             "conversation_style",
             "prompt_answer",
+            "bio",
+            "discoverable",
         ]
 
 

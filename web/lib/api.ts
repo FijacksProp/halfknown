@@ -3,6 +3,7 @@ export type Catalog = {
   intentions: string[];
   interests: string[];
   avatars: string[];
+  avatar_groups: Record<string, string[]>;
   styles: string[];
   policy_version: string;
   policies: { terms: string; privacy: string; guidelines: string };
@@ -25,10 +26,12 @@ export type Profile = {
   languages: string[];
   conversation_style: string;
   prompt_answer: string;
+  bio: string;
+  discoverable: boolean;
 };
 
 export type SavedProfile = { profile: Profile; preferences: Preferences };
-export type MatchMode = 'open' | 'compatible';
+export type MatchMode = 'random';
 export type Chat = {
   state: 'invited' | 'active' | 'ended';
   id: string;
@@ -60,8 +63,58 @@ export type Account = {
   email: string;
   email_verified: boolean;
   onboarding_complete: boolean;
+  is_guest: boolean;
 };
-export type Onboarding = Omit<Profile, 'id' | 'alias'> & {
+export type RandomAccess = {
+  gender: string;
+  adult_confirmed: boolean;
+  accepted_terms: boolean;
+  accepted_guidelines: boolean;
+  policy_version: string;
+  avatar_id?: string;
+  interests?: string[];
+  discoverable?: boolean;
+};
+export type ShowcaseItem = {
+  id: string;
+  kind: 'talent' | 'project' | 'interest';
+  title: string;
+  description: string;
+  created_at: string;
+};
+export type SocialConnection = {
+  id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  direction: 'incoming' | 'outgoing';
+  unread_count: number;
+};
+export type SocialProfile = {
+  id: string;
+  alias: string;
+  avatar_id: string;
+  avatar_group: string;
+  gender: string;
+  intentions: string[];
+  interests: string[];
+  bio: string;
+  prompt_answer: string;
+  discoverable: boolean | null;
+  verified: boolean;
+  following: boolean;
+  followers_count: number;
+  connection: SocialConnection | null;
+  showcase: ShowcaseItem[];
+};
+export type SocialMessage = {
+  id: number;
+  body: string;
+  mine: boolean;
+  created_at: string;
+};
+export type Onboarding = Omit<
+  Profile,
+  'id' | 'alias' | 'bio' | 'discoverable'
+> & {
   birth_date: string;
   accepted_terms: boolean;
   accepted_guidelines: boolean;
@@ -145,8 +198,7 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
   }
   return {
     heartbeat: () => request<MatchState>('/matching/heartbeat/', 'POST'),
-    joinQueue: (mode: MatchMode, intention: string) =>
-      request<MatchState>('/matching/queue/', 'POST', { mode, intention }),
+    joinQueue: () => request<MatchState>('/matching/queue/', 'POST', {}),
     leaveChat: () => request<void>('/matching/queue/', 'DELETE'),
     acceptChat: (id: string) => request<Chat>(`/chats/${id}/accept/`, 'POST'),
     declineChat: (id: string) =>
@@ -164,9 +216,24 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
     blockChat: (id: string) => request<void>(`/chats/${id}/block/`, 'POST'),
     reportChat: (id: string, reason: string, details: string) =>
       request<void>(`/chats/${id}/report/`, 'POST', { reason, details }),
-    catalog: () => request<Catalog>('/catalog/'),
+    quickConnect: (id: string) =>
+      request<SocialConnection>(`/chats/${id}/connect/`, 'POST'),
+    quickConnectionState: (id: string) =>
+      request<{ connection: SocialConnection | null }>(`/chats/${id}/connect/`),
+    declineQuickConnection: (id: string) =>
+      request<void>(`/chats/${id}/connect/`, 'DELETE'),
+    catalog: async () => {
+      const catalog = await request<Catalog>('/catalog/');
+      return { ...catalog, avatar_groups: catalog.avatar_groups ?? {} };
+    },
     preview: () =>
       request<{ alias: string; avatar_id: string }>('/identity-preview/'),
+    randomAccess: (values: RandomAccess) =>
+      request<SavedProfile & { account: Account; csrf_token: string }>(
+        '/random-access/',
+        'POST',
+        values,
+      ),
     me: () => request<Account>('/me/'),
     profile: () => request<SavedProfile>('/profile/'),
     requestCode: (email: string) =>
@@ -184,6 +251,71 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
     savePreferences: (preferences: Preferences) =>
       request<Preferences>('/preferences/', 'PUT', preferences),
     logout: () => request<void>('/auth/logout/', 'POST'),
+    socialMe: () => request<SocialProfile>('/social/me/'),
+    saveSocialMe: (
+      values: Partial<
+        Pick<
+          SocialProfile,
+          | 'avatar_id'
+          | 'bio'
+          | 'prompt_answer'
+          | 'interests'
+          | 'intentions'
+          | 'discoverable'
+        >
+      >,
+    ) => request<SocialProfile>('/social/me/', 'PATCH', values),
+    discover: (
+      params: {
+        q?: string;
+        interest?: string;
+        group?: string;
+        offset?: number;
+      } = {},
+    ) =>
+      request<{ results: SocialProfile[]; next_offset: number | null }>(
+        `/social/discover/?${new URLSearchParams(
+          Object.entries(params)
+            .filter(([, value]) => value !== undefined && value !== '')
+            .map(([key, value]) => [key, String(value)]),
+        )}`,
+      ),
+    socialProfile: (id: string) =>
+      request<SocialProfile>(`/social/profiles/${id}/`),
+    follow: (id: string) =>
+      request<SocialProfile>(`/social/profiles/${id}/follow/`, 'POST'),
+    unfollow: (id: string) =>
+      request<void>(`/social/profiles/${id}/follow/`, 'DELETE'),
+    connect: (id: string) =>
+      request<SocialConnection>(`/social/profiles/${id}/connect/`, 'POST'),
+    disconnect: (id: string) =>
+      request<void>(`/social/profiles/${id}/connect/`, 'DELETE'),
+    connections: () =>
+      request<{ results: (SocialConnection & { peer: SocialProfile })[] }>(
+        '/social/connections/',
+      ),
+    acceptConnection: (id: string) =>
+      request<SocialConnection>(`/social/connections/${id}/accept/`, 'POST'),
+    socialMessages: (id: string, after = 0) =>
+      request<{ results: SocialMessage[] }>(
+        `/social/connections/${id}/messages/?after=${after}`,
+      ),
+    sendSocialMessage: (id: string, body: string) =>
+      request<SocialMessage>(`/social/connections/${id}/messages/`, 'POST', {
+        body,
+      }),
+    addShowcase: (
+      values: Pick<ShowcaseItem, 'kind' | 'title' | 'description'>,
+    ) => request<ShowcaseItem>('/social/showcase/', 'POST', values),
+    deleteShowcase: (id: string) =>
+      request<void>(`/social/showcase/${id}/`, 'DELETE'),
+    blockSocial: (id: string) =>
+      request<void>(`/social/profiles/${id}/block/`, 'POST'),
+    reportSocial: (id: string, reason: string, details: string) =>
+      request<void>(`/social/profiles/${id}/report/`, 'POST', {
+        reason,
+        details,
+      }),
   };
 }
 

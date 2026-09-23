@@ -52,3 +52,4 @@ class LoginChallenge(models.Model):
     consumed_at = models.DateTimeField(null=True)
     window_started_at = models.DateTimeField()
     sends_in_window = models.PositiveSmallIntegerField(default=0)
+    pending_email = models.EmailField(blank=True)

@@ -11,6 +11,7 @@ This branch starts production hardening; it does not deploy Halfknown or certify
 - `/health/` is liveness; `/health/ready/` checks database/cache connectivity, returns 503 on failure, and reveals no infrastructure details. Restrict readiness access at the proxy; it is not a comprehensive SMTP/worker/channel-layer health check.
 - Incoming WebSocket frames are limited to 20 per 10 seconds per connection in addition to the existing size, origin, and session checks. Edge connection/IP limits are still required.
 - Customer-facing screens no longer contain development banners or obsolete feature promises. Real policy links are supplied by the backend catalog. Local email capture remains a local-only tool, not a production delivery mechanism.
+- Guest-first random chat uses a session-owned server identity and does not expose its internal placeholder email. Production still needs guest retention and device/IP abuse controls before public access.
 
 ## Required configuration and processes
 
@@ -41,6 +42,7 @@ The frontend still builds a Worker artifact. A hosting provider and production o
 2. Run PostgreSQL/Redis multi-worker tests and load tests. The current shared database matching gate intentionally serializes operations and must be benchmarked/reworked before high traffic.
 3. Publish reviewed terms, privacy and community policies; decide retention and implement deletion/evidence-hold processes. URL validation does not establish legal adequacy or actual publication.
 4. Complete age-assurance requirements, moderation staffing, escalation/appeals, support and account-deletion procedures.
+   The current 18+ checkbox is self-attestation, not independent age verification.
 5. Add infrastructure readiness checks, private error monitoring with sensitive-data scrubbing, backup/restore checks, connection/IP limits and admin access controls.
 6. Perform browser/device/accessibility testing and a staging acceptance test before public signups.
 

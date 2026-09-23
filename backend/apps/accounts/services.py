@@ -16,11 +16,17 @@ def digest(challenge_id, code):
     return salted_hmac("halfknown.login", f"{challenge_id}:{code}", algorithm="sha256").hexdigest()
 
 
-def request_code(email):
+def request_code(email, guest_user=None):
     email = email.strip().lower()
     now = timezone.now()
     with transaction.atomic():
-        user, _ = User.objects.get_or_create(email=email)
+        claiming = bool(guest_user and guest_user.email.endswith("@guest.halfknown.invalid"))
+        if claiming:
+            if User.objects.filter(email=email).exists():
+                raise ValueError("This email already has an account. Sign in to that account instead.")
+            user = User.objects.select_for_update().get(pk=guest_user.pk)
+        else:
+            user, _ = User.objects.get_or_create(email=email)
         # Users created without a password must not have a usable password.
         if not user.password:
             user.set_unusable_password()
@@ -29,7 +35,11 @@ def request_code(email):
         if not user.is_active:
             return uuid.uuid4()
         previous = LoginChallenge.objects.filter(user=user).first()
-        if previous and (now - previous.sent_at).total_seconds() < settings.OTP_RESEND_SECONDS:
+        if (
+            previous
+            and previous.pending_email == (email if claiming else "")
+            and (now - previous.sent_at).total_seconds() < settings.OTP_RESEND_SECONDS
+        ):
             return previous.challenge_id
         window_start, sends = now, 0
         if previous and now - previous.window_started_at < timedelta(hours=1):
@@ -49,6 +59,7 @@ def request_code(email):
                 "consumed_at": None,
                 "window_started_at": window_start,
                 "sends_in_window": sends + 1,
+                "pending_email": email if claiming else "",
             },
         )
         transaction.on_commit(
@@ -82,9 +93,13 @@ def verify_code(challenge_id, code):
         challenge.attempts += 1
         valid = hmac.compare_digest(challenge.code_digest, digest(challenge_id, code))
         if valid:
+            if challenge.pending_email:
+                if User.objects.filter(email=challenge.pending_email).exclude(pk=user.pk).exists():
+                    return None
+                user.email = challenge.pending_email
             challenge.consumed_at = now
-            if not user.email_verified_at:
+            if not user.email_verified_at or challenge.pending_email:
                 user.email_verified_at = now
-                user.save(update_fields=["email_verified_at"])
+                user.save(update_fields=["email", "email_verified_at"])
         challenge.save(update_fields=["attempts", "consumed_at"])
         return user if valid else None

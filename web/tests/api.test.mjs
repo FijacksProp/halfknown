@@ -15,7 +15,11 @@ function harness(responses) {
 const json = (body, status = 200) => Response.json(body, { status });
 
 test('decline and next preserve server-owned requeue state', async () => {
-  const waiting = { state: 'waiting', mode: 'compatible', intention: 'dating' };
+  const waiting = {
+    state: 'waiting',
+    mode: 'random',
+    intention: 'conversation',
+  };
   const { api, calls } = harness([
     json({ csrf_token: 't' }),
     json(waiting),
@@ -36,7 +40,7 @@ test('chat commands use session-bound CSRF writes and exact conversation endpoin
       json({ state: 'idle' }),
     ]).flat(),
   );
-  await api.joinQueue('compatible', 'dating');
+  await api.joinQueue();
   await api.heartbeat();
   await api.acceptChat('chat-id');
   await api.sendMessage('chat-id', 'retry-id', 'Hello');
@@ -46,10 +50,7 @@ test('chat commands use session-bound CSRF writes and exact conversation endpoin
   await api.leaveChat();
   assert.equal(calls.length, 16);
   assert.equal(calls[1].url, '/api/v1/matching/queue/');
-  assert.deepEqual(JSON.parse(calls[1].body), {
-    mode: 'compatible',
-    intention: 'dating',
-  });
+  assert.deepEqual(JSON.parse(calls[1].body), {});
   assert.equal(calls[7].url, '/api/v1/chats/chat-id/messages/');
   assert.deepEqual(JSON.parse(calls[7].body), {
     client_id: 'retry-id',
@@ -59,6 +60,88 @@ test('chat commands use session-bound CSRF writes and exact conversation endpoin
   assert.equal(calls[15].method, 'DELETE');
   for (let index = 1; index < calls.length; index += 2)
     assert.equal(calls[index].headers.get('X-CSRFToken'), 'chat-token');
+});
+
+test('guest-first access sends adult consent without requiring an email', async () => {
+  const result = {
+    account: { id: 'guest', email: '', is_guest: true },
+    profile: { alias: 'QuietComet' },
+    preferences: {},
+  };
+  const { api, calls } = harness([
+    json({ csrf_token: 'guest-token' }),
+    json(result, 201),
+  ]);
+  assert.deepEqual(
+    await api.randomAccess({
+      gender: 'undisclosed',
+      adult_confirmed: true,
+      accepted_terms: true,
+      accepted_guidelines: true,
+      policy_version: 'launch-1',
+    }),
+    result,
+  );
+  assert.equal(calls[1].url, '/api/v1/random-access/');
+  assert.equal(JSON.parse(calls[1].body).adult_confirmed, true);
+  assert.equal(JSON.parse(calls[1].body).email, undefined);
+});
+
+test('social discovery and connection calls use the intended routes', async () => {
+  const { api, calls } = harness([
+    json({ results: [], next_offset: null }),
+    json({ csrf_token: 't' }),
+    json({ status: 'pending' }, 201),
+    json({ results: [] }),
+    json({ csrf_token: 't' }),
+    json({ body: 'Hello' }, 201),
+    json({ csrf_token: 't' }),
+    json({ status: 'accepted' }),
+  ]);
+  await api.discover({ interest: 'music', group: 'alien' });
+  await api.connect('profile-id');
+  await api.socialMessages('connection-id', 4);
+  await api.sendSocialMessage('connection-id', 'Hello');
+  await api.quickConnect('chat-id');
+  assert.equal(
+    calls[0].url,
+    '/api/v1/social/discover/?interest=music&group=alien',
+  );
+  assert.equal(calls[2].url, '/api/v1/social/profiles/profile-id/connect/');
+  assert.equal(
+    calls[3].url,
+    '/api/v1/social/connections/connection-id/messages/?after=4',
+  );
+  assert.equal(
+    calls[5].url,
+    '/api/v1/social/connections/connection-id/messages/',
+  );
+  assert.deepEqual(JSON.parse(calls[5].body), { body: 'Hello' });
+  assert.equal(calls[7].url, '/api/v1/chats/chat-id/connect/');
+  for (const index of [2, 5, 7])
+    assert.equal(calls[index].headers.get('X-CSRFToken'), 't');
+});
+
+test('quick chat can read and decline an incoming keep-in-touch request', async () => {
+  const incoming = {
+    id: 'request-id',
+    status: 'pending',
+    direction: 'incoming',
+  };
+  const { api, calls } = harness([
+    json({ connection: incoming }),
+    json({ csrf_token: 't' }),
+    new Response(null, { status: 204 }),
+  ]);
+  assert.deepEqual(await api.quickConnectionState('chat-id'), {
+    connection: incoming,
+  });
+  await api.declineQuickConnection('chat-id');
+  assert.equal(calls[0].url, '/api/v1/chats/chat-id/connect/');
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[2].url, '/api/v1/chats/chat-id/connect/');
+  assert.equal(calls[2].method, 'DELETE');
+  assert.equal(calls[2].headers.get('X-CSRFToken'), 't');
 });
 
 test('message recovery uses a cursor and does not replay failed writes', async () => {
@@ -101,6 +184,14 @@ test('GET does not request CSRF or send unnecessary credentials in headers', asy
   assert.deepEqual(await api.me(), { id: 'owner' });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].headers.get('X-CSRFToken'), null);
+});
+
+test('catalog tolerates an older response without avatar groups', async () => {
+  const { api } = harness([json({ avatars: ['human-01'] })]);
+  assert.deepEqual(await api.catalog(), {
+    avatars: ['human-01'],
+    avatar_groups: {},
+  });
 });
 
 test('verification failure is shown and not automatically replayed', async () => {

@@ -14,8 +14,14 @@ INTERESTS = (
     "big-questions",
     "comedy",
 )
-# Stable asset IDs; character art will be produced in a later session.
-AVATARS = ("human-01", "animal-01", "alien-01", "creature-01")
+AVATAR_GROUPS = {
+    "human": ("human-01", "human-02"),
+    "animal": ("animal-01",),
+    "alien": ("alien-01",),
+    "goblin": ("goblin-01", "creature-01"),
+    "vampire": ("vampire-01",),
+}
+AVATARS = tuple(avatar for group in AVATAR_GROUPS.values() for avatar in group)
 STYLES = ("playful", "thoughtful", "deep", "lighthearted", "adventurous", "supportive")
 
 

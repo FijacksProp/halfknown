@@ -1,8 +1,57 @@
 import pytest
+from rest_framework.test import APIClient
 
+from apps.accounts.models import User
 from apps.profiles.models import MatchPreferences, PrivateProfile, Profile
 
 pytestmark = pytest.mark.django_db
+
+
+def random_access_payload(settings, **overrides):
+    return {
+        "gender": "undisclosed",
+        "adult_confirmed": True,
+        "accepted_terms": True,
+        "accepted_guidelines": True,
+        "policy_version": settings.POLICY_VERSION,
+        **overrides,
+    }
+
+
+def test_guest_can_enter_random_chat_without_email(client, settings):
+    response = client.post(
+        "/api/v1/random-access/", random_access_payload(settings), format="json"
+    )
+    assert response.status_code == 201
+    assert response.data["account"]["is_guest"] is True
+    assert response.data["account"]["email"] == ""
+    assert response.data["profile"]["intentions"] == ["conversation"]
+    assert response.data["profile"]["interests"] == []
+    user = User.objects.get(pk=response.data["account"]["id"])
+    assert user.email.endswith("@guest.halfknown.invalid")
+    assert user.private_profile.birth_date is None
+    assert user.private_profile.adult_confirmed_at
+    assert client.post("/api/v1/matching/queue/", {}, format="json").data["state"] == "waiting"
+
+
+@pytest.mark.parametrize(
+    "change", [{"adult_confirmed": False}, {"accepted_terms": False}, {"accepted_guidelines": False}, {"policy_version": "old"}]
+)
+def test_guest_access_fails_closed(client, settings, change):
+    response = client.post(
+        "/api/v1/random-access/", random_access_payload(settings, **change), format="json"
+    )
+    assert response.status_code == 400
+    assert not User.objects.exists()
+
+
+def test_guest_creation_requires_csrf(settings):
+    client = APIClient(enforce_csrf_checks=True)
+    payload = random_access_payload(settings)
+    assert client.post("/api/v1/random-access/", payload, format="json").status_code == 403
+    token = client.get("/api/v1/auth/csrf/").data["csrf_token"]
+    client.credentials(HTTP_X_CSRFTOKEN=token)
+    assert client.post("/api/v1/random-access/", payload, format="json").status_code == 201
 
 
 def test_profile_created_atomically_and_private_fields_hidden(signed_in, user, profile_payload):

@@ -1,16 +1,14 @@
 # halfknown
 
-An adult social app for anonymous first conversations, friendship, flirting, and romance.
+An adult social discovery app for meeting people, building mutual connections, and sharing what makes each person interesting.
 
 ## Current implementation
 
-The Django backend foundation is implemented in `backend/`: email-code sign-in, session authentication, private birth-date storage, anonymous profiles, matching preferences, blocks, mutual eligibility rules, and an authenticated account WebSocket stream.
+The Django backend implements temporary guest identities, email-code account saving and sign-in, opt-in public profiles, discovery, follows, mutual connections, direct messages, showcases, blocks and reports. The earlier random chat queue remains as **Quick Meet**.
 
-The `web/` directory uses **Vinext**, React, TypeScript, and Tailwind. Its onboarding now connects to Django through a local same-origin proxy: email-code verification, server-validated profile creation, returning sign-in, saved profile recovery, matching-preference editing, and logout. It is not yet an installable PWA. Standard Next.js remains the agreed frontend target; migrating the runtime is a separate step.
+The `web/` directory uses **Vinext**, React, TypeScript, and Tailwind. It connects to Django through a local same-origin proxy and presents a light, responsive discovery experience with grouped illustrated characters. It is not yet an installable PWA.
 
-Matching and person-to-person chat are not live. Those cards are explicitly unavailable, not simulated matches. The existing hosted preview has not been updated: the new integration requires a deployed Django endpoint before it can work there.
-
-The first Halfknown redesign is implemented: a white/red/black/blue theme, Bricolage Grotesque display type with DM Sans body text, a conversation-led landing page, a stepped onboarding layout, and redesigned profile/preferences screens. The landing conversation is explicitly fictional, and live matching remains unavailable. AI-generated character artwork is still deferred. Django owns all real identity, eligibility, and safety decisions.
+Core social flows work locally: choose a character, opt into Discover, follow, request a connection, chat after mutual acceptance, share a showcase, and save a guest profile to email. Gender filtering, gifts, payouts, streaming, reels, voice, and video are not implemented. See the [current product specification](docs/halfknown-product-spec.md).
 
 ## Run the API locally on Windows
 
@@ -46,7 +44,9 @@ npm.cmd run dev
 
 Open `http://127.0.0.1:3000/`. `npm.cmd` avoids PowerShell's script-policy restriction on `npm.ps1`; on macOS/Linux use `npm`. Node 22.18+ or 24+ is needed for the TypeScript-based test utilities; local verification used Node 24.
 
-Choose intentions, enter a birth date and matching boundaries, select interests, review the development disclosures, then request a code. In local file-email mode, open the newly captured message in `backend/.local-mail/` to retrieve it. Once verified, the profile is saved in Django and reloads with the session. Unsaved drafts are held only in memory and disappear on refresh. The birthday check is self-declared adult eligibility, not independent age assurance.
+The current entry asks for a character, optional interests, adult/policy confirmations, and an explicit choice to appear in Discover. A guest can attach a new email in **My space** without losing the profile or connections.
+
+Choose a character and optional interests, confirm 18+ status, accept the notices, and decide whether your profile appears in Discover. No email is required to begin. Add a new email in **My space** to retain the guest identity across devices. Returning accounts can request a local code from `backend/.local-mail/`. Adult confirmation is self-attestation, not independent age assurance.
 
 The dev proxy forwards `/api/` and `/ws/` to Django without rewriting WebSocket Origin. Local settings explicitly allow the two loopback origins on port 3000; production settings do not inherit these exceptions. An optional `web/.env` can set `DJANGO_API_TARGET` (see `.env.example`). The proxy is development-only: a production reverse proxy must route these paths to a deployed Django service.
 
@@ -61,7 +61,7 @@ npm.cmd run build
 
 In a sandbox that blocks child processes, the test suite also runs with `node --test --test-isolation=none tests/*.test.mjs`. The full `npm.cmd run lint` currently reports pre-existing issues in bundled `components/ui/` and `hooks/use-mobile.ts`; the changed application code is checked separately.
 
-For an opt-in HTTP smoke check with both servers running in **local file-email mode**, run `node scripts/smoke-onboarding.mjs` from `web/`. It creates one synthetic account and checks the actual frontend proxy, CSRF, email verification, profile persistence, preferences, and logout. The test account and captured mail remain in the ignored local database/mail folder; codes are never printed. Do not run it against an SMTP-backed environment. This is not a browser interaction or visual test.
+For an opt-in full-flow smoke check with both servers running, run `node scripts/smoke-chat.mjs` from `web/`. It creates three synthetic guest identities and a labeled test report, then checks the real frontend proxy, WebSockets, random matching, messaging, Next/requeue, stale actions, reporting, and blocking. It is not a browser interaction or visual test.
 
 ## Run PostgreSQL, Redis, and a worker
 
@@ -99,9 +99,9 @@ The PostgreSQL-only concurrent OTP-consumption test deliberately skips in SQLite
 backend/
   config/                 Settings, URLs, ASGI, Celery
   apps/accounts/          Custom user, hashed OTP, sessions
-  apps/profiles/          Private data, anonymous profile, preferences
-  apps/matching/          Mutual eligibility service
-  apps/moderation/        Blocking foundation
+  apps/profiles/          Adult confirmation and anonymous identities
+  apps/matching/          Random queue and durable text chat
+  apps/moderation/        Blocking and report evidence
   apps/realtime/          Authenticated account event stream
   tests/                  API, privacy, eligibility, WebSocket tests
 web/                      Halfknown landing and connected onboarding
@@ -111,10 +111,10 @@ compose.yaml              Local full-stack services
 
 ## Next build milestones
 
-1. Migrate the frontend runtime to standard Next.js and choose/configure production Django hosting and same-origin routing. Finish real launch policies and age-assurance decisions before public sign-ups.
-2. Implement queue leases, availability, atomic mutual invitations, timeout/requeue, and fairness. Recheck eligibility at invitation acceptance.
-3. Implement durable text messaging, membership authorization, acknowledgements, idempotency, reconnection, pagination, and rate limits. Keep expensive work outside the message path.
-4. Add report evidence, moderator decisions, appeals, mutual continuation/reveal, and connection management before a public beta.
-5. Produce the character collection and carry the Halfknown design into the forthcoming matching/chat screens. Browser visual and interaction QA remains to be performed.
+1. Choose/configure production Django hosting and same-origin routing; complete real launch policies, retention, age-assurance, device/IP abuse controls, and moderation operations.
+2. Benchmark the database-backed matching gate with PostgreSQL/Redis and replace it before traffic exceeds the MVP design.
+3. Add a safe guest-to-email account upgrade and subscription entitlement system.
+4. Introduce premium gender/region filters only after queue liquidity supports them; never claim unverified gender.
+5. Make the web app installable, then evaluate voice. Video remains a later safety and infrastructure project.
 
 See [the API contract](docs/backend-api.md) and [product specification](docs/anonymous-chat-product-spec.md).

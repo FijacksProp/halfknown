@@ -10,8 +10,10 @@ from .models import Message
 
 
 class QueueInput(serializers.Serializer):
-    mode = serializers.ChoiceField(choices=["open", "compatible"])
-    intention = serializers.CharField(max_length=24)
+    # Kept as optional transition fields so older clients fail gracefully while
+    # the server owns the single random queue.
+    mode = serializers.CharField(required=False)
+    intention = serializers.CharField(required=False)
 
 
 class MessageInput(serializers.Serializer):
@@ -23,7 +25,7 @@ class QueueView(APIView):
     def post(self, request):
         data = QueueInput(data=request.data)
         data.is_valid(raise_exception=True)
-        return Response(services.join(request.user, **data.validated_data))
+        return Response(services.join(request.user))
 
     def delete(self, request):
         services.leave(request.user)

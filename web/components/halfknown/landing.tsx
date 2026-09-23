@@ -1,158 +1,176 @@
-'use client';
-
-import { ArrowDown, ArrowRight, LockKeyhole } from 'lucide-react';
+import { ArrowRight, Heart, MessageCircle, Users } from 'lucide-react';
 import Image from 'next/image';
-import { Button } from '@/components/ui/button';
 
 export function Landing({
-  onBegin,
-  onSignIn,
   ready,
   error,
+  onBegin,
+  onSignIn,
 }: {
-  onBegin: () => void;
-  onSignIn: () => void;
   ready: boolean;
   error: string;
+  onBegin: () => void;
+  onSignIn: () => void;
 }) {
   return (
-    <div className="landing">
-      <section className="landing-hero" aria-labelledby="landing-title">
-        <div className="hero-copy">
-          <span className="eyebrow">Meet people. Keep your privacy.</span>
-          <h1 id="landing-title">
-            Someone worth
-            <br />
-            <em>getting to know.</em>
-          </h1>
-          <p className="hero-lead">
-            For the conversations you wouldn’t have anywhere else. Meet someone
-            new, take your time, and decide what you share.
-          </p>
-          <div className="hero-actions">
-            <Button
-              className="primary-button"
-              disabled={!ready}
-              onClick={onBegin}
-            >
-              {ready
-                ? 'Find your kind of connection'
-                : 'Checking your session…'}
-              <ArrowRight aria-hidden="true" />
-            </Button>
-          </div>
-          <p className="hero-signin">
-            Already a little known here?{' '}
-            <button onClick={onSignIn} disabled={!ready}>
-              Sign in
-            </button>
-          </p>
-          {error && (
-            <div className="form-error" role="alert">
-              <p>{error}</p>
-              <Button variant="ghost" onClick={() => window.location.reload()}>
-                Try reconnecting
-              </Button>
+    <div className="site-landing">
+      <header className="site-header shell">
+        <a className="wordmark" href="#top" aria-label="Halfknown home">
+          halfknown<span>.</span>
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="#how">How it works</a>
+          <a href="#characters">The characters</a>
+        </nav>
+        <button className="header-signin" onClick={onSignIn}>
+          Sign in <ArrowRight size={16} />
+        </button>
+      </header>
+
+      <main id="top">
+        <section className="new-hero shell">
+          <div className="new-hero-copy">
+            <span className="section-kicker">
+              <span className="kicker-line" /> A PLACE TO FIND YOUR PEOPLE
+            </span>
+            <h1>
+              Come curious.
+              <br />
+              <em>Leave connected.</em>
+            </h1>
+            <p>
+              Meet people you might never have crossed paths with. Follow the
+              ones who interest you, talk freely, and make room for something
+              more.
+            </p>
+            <div className="new-hero-actions">
+              <button
+                className="round-action"
+                onClick={onBegin}
+                disabled={!ready}
+              >
+                Find your people <ArrowRight size={20} />
+              </button>
+              <span>Free to meet. Free to message.</span>
             </div>
-          )}
-          <div className="hero-trust">
-            <LockKeyhole aria-hidden="true" />
-            <span>Private identity. Real boundaries. Always 18+.</span>
+            {error && (
+              <p className="social-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="hero-note">
+              <span className="note-mark">18+</span> A social space for adults.
+              Your character comes first; reveal more when you choose.
+            </div>
           </div>
-        </div>
-        <figure className="character-feature">
-          <div className="character-frame">
+          <div
+            className="new-hero-art"
+            aria-label="Illustrated group of a goblin, vampire and human artist"
+          >
             <Image
-              src="/images/halfknown-characters.png"
+              src="/images/halfknown-creators.png"
+              alt="A goblin, vampire and human artist hanging out together"
               width={1536}
               height={1024}
-              unoptimized
-              fetchPriority="high"
-              alt="An illustrated person, cat, and alien getting to know one another."
+            />
+            <span className="art-tag art-tag-one">many kinds of people</span>
+            <span className="art-tag art-tag-two">one place to meet</span>
+          </div>
+        </section>
+
+        <section className="landing-band" id="how">
+          <div className="shell landing-band-inner">
+            <div>
+              <span className="section-kicker">THE IDEA</span>
+              <h2>
+                Some connections
+                <br />
+                start unexpectedly.
+              </h2>
+            </div>
+            <div className="idea-steps">
+              <article>
+                <span>01</span>
+                <Users size={22} />
+                <h3>Find someone interesting</h3>
+                <p>
+                  Explore people through their interests, character groups, and
+                  what they love doing.
+                </p>
+              </article>
+              <article>
+                <span>02</span>
+                <Heart size={22} />
+                <h3>Make it mutual</h3>
+                <p>
+                  Follow, request a connection, and decide together if you want
+                  to keep talking.
+                </p>
+              </article>
+              <article>
+                <span>03</span>
+                <MessageCircle size={22} />
+                <h3>Let it grow</h3>
+                <p>
+                  Message freely. Friendship, collaboration, attraction—it can
+                  go where you both want.
+                </p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="character-section shell" id="characters">
+          <div>
+            <span className="section-kicker">MEET THE CAST</span>
+            <h2>
+              Pick a character.
+              <br />
+              <em>Be yourself.</em>
+            </h2>
+            <p>
+              Humans, aliens, animals, goblins and vampires all have a place
+              here. Your character group is a playful identity you can carry
+              into future community events.
+            </p>
+            <button onClick={onBegin} className="text-action">
+              Choose yours <ArrowRight size={19} />
+            </button>
+          </div>
+          <div className="character-group-art">
+            <Image
+              src="/images/halfknown-characters.png"
+              alt="An illustrated human, animal character and alien together"
+              width={1536}
+              height={1024}
             />
           </div>
-          <figcaption>
-            <span>Different faces. Common ground.</span>
-            <small>Original AI-generated characters, not member photos.</small>
-          </figcaption>
-        </figure>
-      </section>
-      <div className="preview-ribbon">
-        <span className="ribbon-label">START WITH A CONVERSATION</span>
-        <p>
-          Choose your intention. Accept an introduction together. Take it at
-          your pace.
-        </p>
-        <a href="#how-it-works">
-          Get to know halfknown <ArrowDown aria-hidden="true" />
-        </a>
-      </div>
-      <section
-        className="how-section"
-        id="how-it-works"
-        aria-labelledby="how-title"
-      >
-        <div className="section-intro">
-          <span className="eyebrow">The idea is simple</span>
-          <h2 id="how-title">
-            Good company.
-            <br />
-            <span>On your terms.</span>
-          </h2>
-        </div>
-        <ol className="how-list">
-          <li>
-            <span className="step-number">01</span>
-            <div>
-              <h3>Choose what people know.</h3>
-              <p>
-                Start with an anonymous alias, your interests, and your
-                boundaries. Your email and birth date stay private.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span className="step-number">02</span>
-            <div>
-              <h3>Say what you’re here for.</h3>
-              <p>
-                Dating, flirting, friendship, or just talking. Choose what you
-                are open to—without being put in a box.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span className="step-number">03</span>
-            <div>
-              <h3>Meet when you’re ready.</h3>
-              <p>
-                Choose Open Chat or Compatible Match. Accept an introduction
-                together before you chat. Age boundaries and blocks always
-                apply.
-              </p>
-            </div>
-          </li>
-        </ol>
-      </section>
-      <section className="boundary-band" aria-labelledby="boundary-title">
-        <span className="boundary-icon">
-          <ShieldSymbol />
+        </section>
+
+        <section className="landing-end">
+          <div className="shell">
+            <span className="section-kicker">READY WHEN YOU ARE</span>
+            <h2>
+              Your next good conversation
+              <br />
+              could start here.
+            </h2>
+            <button
+              className="round-action light"
+              onClick={onBegin}
+              disabled={!ready}
+            >
+              Join Halfknown <ArrowRight size={20} />
+            </button>
+          </div>
+        </section>
+      </main>
+      <footer className="site-footer shell">
+        <span className="wordmark">
+          halfknown<span>.</span>
         </span>
-        <div>
-          <h2 id="boundary-title">Your boundaries belong to you.</h2>
-          <p>
-            18+ only. Gender preferences stay free. Open Chat is a separate,
-            explicit opt-in.
-          </p>
-        </div>
-        <Button className="dark-button" disabled={!ready} onClick={onBegin}>
-          Make yourself halfknown <ArrowRight aria-hidden="true" />
-        </Button>
-      </section>
+        <span>Meet people. See where it goes.</span>
+      </footer>
     </div>
   );
-}
-
-function ShieldSymbol() {
-  return <LockKeyhole aria-hidden="true" />;
 }

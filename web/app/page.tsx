@@ -1,1019 +1,424 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  EyeOff,
-  Heart,
-  MessageCircle,
-  RefreshCw,
-  ShieldCheck,
-  Smile,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from '@/components/ui/input-otp';
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select';
-import { Progress } from '@/components/ui/progress';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, LockKeyhole } from 'lucide-react';
+import Image from 'next/image';
 import { Landing } from '@/components/halfknown/landing';
-import { ChatWorkspace } from '@/components/halfknown/chat-workspace';
+import { SocialWorkspace } from '@/components/halfknown/social-workspace';
+import { Avatar, avatarOptions } from '@/components/halfknown/avatar';
 import {
   api,
   ApiError,
   type Account,
   type Catalog,
-  type Onboarding,
-  type Preferences,
   type SavedProfile,
 } from '@/lib/api';
-import {
-  adultBirthDate,
-  emptyDraft,
-  emptyPreferences,
-  label,
-  stepValid,
-  toggleChoice,
-  validPreferences,
-} from '@/lib/onboarding';
 
-type Screen =
-  | 'landing'
-  | 'loading'
-  | 'onboarding'
-  | 'signin'
-  | 'verify'
-  | 'ready'
-  | 'preferences';
-const languages = {
-  en: 'English',
-  fr: 'French',
-  es: 'Spanish',
-  pt: 'Portuguese',
-  de: 'German',
-  ar: 'Arabic',
-  hi: 'Hindi',
-  ja: 'Japanese',
-  zh: 'Chinese',
-  yo: 'Yoruba',
-  ig: 'Igbo',
-  ha: 'Hausa',
-};
+type Screen = 'landing' | 'setup' | 'signin' | 'verify' | 'app';
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>('landing');
-  const [sessionReady, setSessionReady] = useState(false);
-  const [step, setStep] = useState(1);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [draft, setDraft] = useState<Onboarding>(emptyDraft);
   const [account, setAccount] = useState<Account | null>(null);
   const [saved, setSaved] = useState<SavedProfile | null>(null);
-  const [preferences, setPreferences] = useState<Preferences>(emptyPreferences);
+  const [avatar, setAvatar] = useState('human-01');
+  const [gender, setGender] = useState('undisclosed');
+  const [interests, setInterests] = useState<string[]>([]);
+  const [adult, setAdult] = useState(false);
+  const [terms, setTerms] = useState(false);
+  const [guidelines, setGuidelines] = useState(false);
+  const [discoverable, setDiscoverable] = useState(false);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [challengeId, setChallengeId] = useState('');
-  const [returning, setReturning] = useState(false);
-  const [resendAt, setResendAt] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [challenge, setChallenge] = useState('');
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const working = useRef(false);
-  const heading = useRef<HTMLHeadingElement>(null);
+
+  async function reloadAccount() {
+    const current = await api.me();
+    setAccount(current);
+    if (current.onboarding_complete) {
+      setSaved(await api.profile());
+      setScreen('app');
+    } else setScreen('setup');
+  }
 
   useEffect(() => {
-    let active = true;
-    async function boot() {
-      try {
-        const [options, identity, me] = await Promise.all([
-          api.catalog(),
-          api.preview(),
-          api.me().catch((reason: unknown) => {
-            if (reason instanceof ApiError && reason.status === 403)
-              return null;
-            throw reason;
-          }),
-        ]);
-        const profile = me?.onboarding_complete ? await api.profile() : null;
-        if (!active) return;
+    let alive = true;
+    void Promise.all([
+      api.catalog(),
+      api.me().catch((reason) => {
+        if (reason instanceof ApiError && reason.status === 403) return null;
+        throw reason;
+      }),
+    ])
+      .then(async ([options, current]) => {
+        if (!alive) return;
         setCatalog(options);
-        setDraft((current) => ({
-          ...current,
-          avatar_id: identity.avatar_id,
-          policy_version: options.policy_version,
-        }));
-        setAccount(me);
-        setSaved(profile);
-        setEmail(me?.email ?? '');
-        setSessionReady(true);
-        setScreen(profile ? 'ready' : me ? 'onboarding' : 'landing');
-      } catch (reason) {
-        if (active)
+        setReady(true);
+        setAccount(current);
+        if (current?.onboarding_complete) {
+          const profile = await api.profile();
+          if (alive) {
+            setSaved(profile);
+            setScreen('app');
+          }
+        } else if (current) setScreen('setup');
+      })
+      .catch((reason) => {
+        if (alive)
           setError(
             reason instanceof Error
               ? reason.message
-              : 'Could not load your account.',
+              : 'Halfknown could not open.',
           );
-      }
-    }
-    void boot();
+      });
     return () => {
-      active = false;
+      alive = false;
     };
   }, []);
 
-  useEffect(() => {
-    heading.current?.focus();
-  }, [screen, step]);
-  useEffect(() => {
-    const update = () =>
-      setSecondsLeft(Math.max(0, Math.ceil((resendAt - Date.now()) / 1000)));
-    update();
-    const timer = window.setInterval(update, 1000);
-    return () => window.clearInterval(timer);
-  }, [resendAt]);
-
-  function change<K extends keyof Onboarding>(key: K, value: Onboarding[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }
-
-  async function run(action: () => Promise<void>) {
-    if (working.current) return;
-    working.current = true;
+  async function perform(action: () => Promise<void>) {
+    if (busy) return;
     setBusy(true);
     setError('');
-    setNotice('');
     try {
       await action();
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 403) {
-        setAccount(null);
-        setSaved(null);
-        setChallengeId('');
-        setCode('');
-        setScreen('signin');
-        setReturning(true);
-        setError(
-          'Your session needs refreshing. Sign in again; your unsaved choices are still here.',
-        );
-      } else {
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : 'Something went wrong. Please try again.',
-        );
-      }
+      setError(reason instanceof Error ? reason.message : 'Please try again.');
     } finally {
-      working.current = false;
       setBusy(false);
     }
   }
-
-  async function persistProfile() {
-    // Another tab may have completed onboarding. Do not overwrite that profile with a new draft.
-    const me = await api.me();
-    setAccount(me);
-    if (me.onboarding_complete) {
-      setSaved(await api.profile());
-      setScreen('ready');
-      return;
-    }
-    let result: SavedProfile;
-    try {
-      result = await api.createProfile(draft);
-    } catch (reason) {
-      if (!(reason instanceof ApiError) || reason.status !== 409) throw reason;
-      result = await api.profile();
-    }
-    setSaved(result);
-    setAccount({ ...me, onboarding_complete: true });
-    setDraft(emptyDraft());
-    setScreen('ready');
-  }
-
-  async function sendCode() {
-    const result = await api.requestCode(email.trim());
-    setChallengeId(result.challenge_id);
-    setCode('');
-    setResendAt(Date.now() + 60_000);
-    setScreen('verify');
-    setNotice(
-      'If this address can sign in, a six-digit code is on its way. It expires after 10 minutes.',
+  function toggleInterest(value: string) {
+    setInterests((previous) =>
+      previous.includes(value)
+        ? previous.filter((item) => item !== value)
+        : previous.length < 5
+          ? [...previous, value]
+          : previous,
     );
   }
-
-  async function verify() {
-    await api.verifyCode(challengeId, code);
-    setCode('');
-    setChallengeId('');
-    // If profile recovery fails, the user can retry sign-in or reload; the OTP is already consumed.
-    setScreen('signin');
-    const me = await api.me();
-    setAccount(me);
-    setEmail(me.email);
-    if (me.onboarding_complete) {
-      setSaved(await api.profile());
-      setDraft(emptyDraft());
-      setScreen('ready');
-    } else if (returning) {
-      setDraft((current) => ({
-        ...current,
-        avatar_id: current.avatar_id || catalog!.avatars[0],
-        policy_version: catalog!.policy_version,
-      }));
-      setStep(1);
-      setScreen('onboarding');
-      setNotice('You are signed in. Finish your profile to continue.');
-    } else {
-      // A failed save is retried without asking for the consumed code again.
-      setStep(4);
-      setScreen('onboarding');
-      await persistProfile();
-    }
+  async function begin(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!catalog) return;
+    await perform(async () => {
+      const result = await api.randomAccess({
+        gender,
+        avatar_id: avatar,
+        interests,
+        discoverable,
+        adult_confirmed: adult,
+        accepted_terms: terms,
+        accepted_guidelines: guidelines,
+        policy_version: catalog.policy_version,
+      });
+      setAccount(result.account);
+      setSaved({ profile: result.profile, preferences: result.preferences });
+      setScreen('app');
+    });
   }
-
+  async function requestCode(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await perform(async () => {
+      const result = await api.requestCode(email);
+      setChallenge(result.challenge_id);
+      setScreen('verify');
+    });
+  }
+  async function verifyCode(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await perform(async () => {
+      await api.verifyCode(challenge, code);
+      await reloadAccount();
+    });
+  }
   async function signOut() {
     await api.logout();
     setAccount(null);
     setSaved(null);
-    setEmail('');
-    setCode('');
-    setChallengeId('');
-    setPreferences(emptyPreferences());
-    setDraft({
-      ...emptyDraft(),
-      avatar_id: catalog!.avatars[0],
-      policy_version: catalog!.policy_version,
-    });
-    setStep(1);
-    setScreen('signin');
-    setReturning(true);
-    setNotice('You are signed out.');
+    setScreen('landing');
   }
 
-  const editingPreferences = screen === 'preferences';
-  const inOnboarding = screen === 'onboarding';
-  const inEmail = screen === 'signin' || (inOnboarding && step === 4);
-  const canContinue =
-    screen === 'verify'
-      ? /^[0-9]{6}$/.test(code)
-      : screen === 'signin'
-        ? !!email.trim()
-        : editingPreferences
-          ? validPreferences(preferences)
-          : stepValid(step, draft) &&
-            (step !== 4 || !!account || !!email.trim());
-
-  async function submit() {
-    if (!canContinue) return;
-    if (screen === 'verify') return verify();
-    if (screen === 'signin') return sendCode();
-    if (editingPreferences) {
-      const result = await api.savePreferences(preferences);
-      setSaved((current) =>
-        current ? { ...current, preferences: result } : null,
-      );
-      setScreen('ready');
-      setNotice('Matching preferences saved.');
-      return;
-    }
-    if (step < 4) {
-      setStep(step + 1);
-      return;
-    }
-    if (account) return persistProfile();
-    setReturning(false);
-    await sendCode();
-  }
-
+  if (screen === 'app' && account && saved && catalog)
+    return (
+      <SocialWorkspace
+        account={account}
+        saved={saved}
+        catalog={catalog}
+        onSignOut={signOut}
+        onAccountChange={reloadAccount}
+      />
+    );
+  if (screen === 'landing')
+    return (
+      <Landing
+        ready={ready}
+        error={error}
+        onBegin={() => {
+          setError('');
+          setScreen('setup');
+        }}
+        onSignIn={() => {
+          setError('');
+          setScreen('signin');
+        }}
+      />
+    );
   return (
-    <main className="app-shell">
-      <a className="skip-link" href="#main-content">
-        Skip to content
-      </a>
-      <header className="topbar">
+    <div className="entry-page">
+      <div className="entry-art">
+        <button className="wordmark" onClick={() => setScreen('landing')}>
+          halfknown<span>.</span>
+        </button>
+        <div>
+          <span className="section-kicker">MAKE YOUR FIRST HELLO</span>
+          <h1>
+            Everyone arrives
+            <br />
+            <em>as someone new.</em>
+          </h1>
+          <p>
+            Your character is just the beginning. The people you meet make the
+            rest of the story.
+          </p>
+        </div>
+        <Image
+          src="/images/halfknown-characters.png"
+          alt="Illustrated Halfknown characters"
+          width={1536}
+          height={1024}
+        />
+      </div>
+      <main className="entry-main">
         <button
-          className="brand"
-          aria-label="Halfknown home"
-          disabled={busy}
+          className="back-link"
           onClick={() => {
-            setScreen(account?.onboarding_complete ? 'ready' : 'landing');
-            if (sessionReady) setError('');
+            setError('');
+            setScreen('landing');
           }}
         >
-          <span className="brand-mark" aria-hidden="true">
-            h<span>.</span>
-          </span>
-          <span>
-            halfknown<span className="brand-dot">.</span>
-          </span>
+          <ArrowLeft size={18} /> Back to home
         </button>
-        {screen === 'landing' && (
-          <nav className="top-nav" aria-label="Main navigation">
-            <a href="#how-it-works">How it works</a>
-            <span className="preview-label">For adults, 18+</span>
-          </nav>
-        )}
-        {account ? (
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void run(signOut)}
-          >
-            Sign out
-          </Button>
-        ) : screen === 'landing' ? (
-          <Button
-            variant="outline"
-            className="header-signin"
-            disabled={!sessionReady}
-            onClick={() => {
-              setReturning(true);
-              setScreen('signin');
-              setError('');
-            }}
-          >
-            Sign in <ArrowRight aria-hidden="true" />
-          </Button>
-        ) : (
-          <span className="privacy-note">
-            <EyeOff aria-hidden="true" /> Your identity, your choice
-          </span>
-        )}
-      </header>
-      <div id="main-content" tabIndex={-1}>
-        {screen === 'landing' ? (
-          <Landing
-            ready={sessionReady}
-            error={error}
-            onBegin={() => {
-              setStep(1);
-              setScreen('onboarding');
-              setError('');
-            }}
-            onSignIn={() => {
-              setReturning(true);
-              setScreen('signin');
-              setError('');
-            }}
-          />
-        ) : screen === 'loading' ? (
-          <section className="ready-view">
-            <h1 ref={heading} tabIndex={-1}>
-              Opening Halfknown
-            </h1>
-            {error ? (
-              <>
-                <p role="alert">{error}</p>
-                <Button onClick={() => window.location.reload()}>
-                  Try again
-                </Button>
-              </>
-            ) : (
-              <output>Checking your session…</output>
-            )}
-          </section>
-        ) : screen === 'ready' && saved ? (
-          <ChatWorkspace
-            saved={saved}
-            onPreferences={() => {
-              setPreferences({
-                ...saved.preferences,
-                genders: [...saved.preferences.genders],
-              });
-              setScreen('preferences');
-              setNotice('');
-            }}
-          />
-        ) : (
-          <section className="onboarding-layout">
-            <aside className="story-panel">
-              <span className="eyebrow">
-                <Heart aria-hidden="true" /> A little introduction
-              </span>
-              <h1>
-                Come as you are.
-                <br />
-                <em>Keep a little mystery.</em>
-              </h1>
-              <p className="story-lead">
-                No perfect photos. No clever bio required. Just a few things
-                that make you, you.
-              </p>
-              {inOnboarding && (
-                <ol className="setup-steps" aria-label="Profile setup progress">
-                  {[
-                    'Your intention',
-                    'Your boundaries',
-                    'Your personality',
-                    'Your private sign-in',
-                  ].map((name, index) => (
-                    <li
-                      key={name}
-                      aria-current={step === index + 1 ? 'step' : undefined}
-                      data-complete={step > index + 1}
-                    >
-                      <span>
-                        {step > index + 1 ? (
-                          <Check aria-hidden="true" />
-                        ) : (
-                          `0${index + 1}`
-                        )}
-                      </span>
-                      <div>
-                        {name}
-                        <small>
-                          {step > index + 1
-                            ? 'Done. Very you.'
-                            : step === index + 1
-                              ? 'You are here'
-                              : 'Coming up'}
-                        </small>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              <div className="safety-callout">
-                <ShieldCheck aria-hidden="true" />
-                <span>
-                  <strong>Your identity stays yours.</strong>Your email and
-                  birth date are never shown to a match. Share personal details
-                  only when you choose.
-                </span>
-              </div>
-            </aside>
-            <form
-              className="onboarding-card"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(submit);
-              }}
-              aria-busy={busy}
-            >
-              {inOnboarding && (
-                <>
-                  <div className="card-topline">
-                    <span>Step {step} of 4</span>
-                    <span>{Math.round(((step - 1) / 4) * 100)}% of setup</span>
-                  </div>
-                  <Progress
-                    value={((step - 1) / 4) * 100}
-                    className="onboarding-progress"
-                  />
-                </>
-              )}
-              <fieldset disabled={busy} className="step-content">
-                {inOnboarding && step === 1 && (
-                  <>
-                    <StepHeading title="What brings you here?" ref={heading}>
-                      Choose one or more. There is room for different kinds of
-                      connection.
-                    </StepHeading>
-                    <ChoiceChips
-                      variant="intentions"
-                      values={catalog!.intentions}
-                      selected={draft.intentions}
-                      onChange={(value) =>
-                        change(
-                          'intentions',
-                          toggleChoice(draft.intentions, value),
-                        )
-                      }
-                    />
-                    {!account && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="secondary-action"
-                        onClick={() => {
-                          setReturning(true);
-                          setScreen('signin');
-                          setError('');
-                        }}
-                      >
-                        Already joined? Sign in
-                      </Button>
-                    )}
-                  </>
-                )}
-                {inOnboarding && step === 2 && (
-                  <>
-                    <StepHeading
-                      title="Your boundaries come first"
-                      ref={heading}
-                    >
-                      Your birth date stays private. Halfknown is for adults
-                      aged 18 and over.
-                    </StepHeading>
-                    <label className="form-field" htmlFor="birth-date">
-                      Date of birth
-                      <Input
-                        id="birth-date"
-                        type="date"
-                        value={draft.birth_date}
-                        required
-                        onChange={(event) =>
-                          change('birth_date', event.target.value)
-                        }
-                        aria-describedby="birthday-note"
-                      />
-                    </label>
-                    <p id="birthday-note" className="field-note">
-                      {draft.birth_date && !adultBirthDate(draft.birth_date)
-                        ? 'Enter a valid birth date. You must be at least 18.'
-                        : 'Enter this carefully; changing a saved birth date requires support.'}
-                    </p>
-                    <label className="form-field">
-                      Your gender
-                      <NativeSelect
-                        value={draft.gender}
-                        required
-                        onChange={(event) =>
-                          change('gender', event.target.value)
-                        }
-                      >
-                        <NativeSelectOption value="">
-                          Choose an option
-                        </NativeSelectOption>
-                        {catalog!.genders.map((value) => (
-                          <NativeSelectOption value={value} key={value}>
-                            {label(value)}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </label>
-                    <PreferenceFields
-                      values={draft.preferences}
-                      genders={catalog!.genders}
-                      onChange={(value) => change('preferences', value)}
-                    />
-                  </>
-                )}
-                {inOnboarding && step === 3 && (
-                  <>
-                    <StepHeading title="A little more you" ref={heading}>
-                      Pick 3–5 interests. These give a new conversation
-                      somewhere to start.
-                    </StepHeading>
-                    <ChoiceChips
-                      values={catalog!.interests}
-                      selected={draft.interests}
-                      onChange={(value) =>
-                        change(
-                          'interests',
-                          toggleChoice(draft.interests, value, 5),
-                        )
-                      }
-                    />
-                    <output className="selection-count">
-                      {draft.interests.length} of 5 selected
-                    </output>
-                    <label className="form-field">
-                      Chat language
-                      <NativeSelect
-                        value={draft.languages[0]}
-                        onChange={(event) =>
-                          change('languages', [event.target.value])
-                        }
-                      >
-                        {Object.entries(languages).map(([value, name]) => (
-                          <NativeSelectOption value={value} key={value}>
-                            {name}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </label>
-                    <label className="form-field">
-                      Conversation style
-                      <NativeSelect
-                        value={draft.conversation_style}
-                        onChange={(event) =>
-                          change('conversation_style', event.target.value)
-                        }
-                      >
-                        {catalog!.styles.map((value) => (
-                          <NativeSelectOption value={value} key={value}>
-                            {label(value)}
-                          </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </label>
-                    <div className="avatar-preview">
-                      <Smile aria-hidden="true" />
-                      <span>{label(draft.avatar_id)} identity</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        aria-label="Shuffle avatar"
-                        onClick={() =>
-                          change(
-                            'avatar_id',
-                            catalog!.avatars[
-                              (catalog!.avatars.indexOf(draft.avatar_id) + 1) %
-                                catalog!.avatars.length
-                            ],
-                          )
-                        }
-                      >
-                        <RefreshCw aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <p className="field-note">
-                      Your anonymous alias will be assigned when your profile is
-                      saved.
-                    </p>
-                  </>
-                )}
-                {inEmail && (
-                  <>
-                    <StepHeading
-                      title={
-                        screen === 'signin'
-                          ? 'Good to have you here'
-                          : account
-                            ? 'Save your anonymous profile'
-                            : 'One last private step'
-                      }
-                      ref={heading}
-                    >
-                      {account
-                        ? `Signed in as ${account.email}.`
-                        : 'We will send a six-digit sign-in code. No password, and your email is never shown to matches.'}
-                    </StepHeading>
-                    {!account && (
-                      <label className="form-field" htmlFor="email-address">
-                        Email address
-                        <Input
-                          id="email-address"
-                          type="email"
-                          autoComplete="email"
-                          required
-                          maxLength={254}
-                          placeholder="you@example.com"
-                          value={email}
-                          onChange={(event) => setEmail(event.target.value)}
-                        />
-                      </label>
-                    )}
-                    {inOnboarding && (
-                      <>
-                        <details className="policy-details">
-                          <summary>Privacy and community guidelines</summary>
-                          <p>
-                            We use your email for sign-in. Saving a profile
-                            stores your birth date privately, plus your chosen
-                            interests and matching preferences. Sign out on
-                            shared devices. Unsaved choices are lost on refresh.
-                          </p>
-                          <p>
-                            Adults only. Do not impersonate others, harass,
-                            threaten, scam, or submit explicit content. Messages
-                            are stored on our servers, not end-to-end encrypted.
-                            Reporting shares the latest 20 messages with staff.
-                          </p>
-                          {catalog?.policies?.terms && (
-                            <p>
-                              <a
-                                href={catalog.policies.terms}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Terms of service
-                              </a>
-                              {' · '}
-                              <a
-                                href={catalog.policies.privacy}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Privacy policy
-                              </a>
-                              {' · '}
-                              <a
-                                href={catalog.policies.guidelines}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Community guidelines
-                              </a>
-                            </p>
-                          )}
-                        </details>
-                        <label className="consent-row" htmlFor="accept-terms">
-                          <Checkbox
-                            id="accept-terms"
-                            checked={draft.accepted_terms}
-                            onCheckedChange={(value) =>
-                              change('accepted_terms', value === true)
-                            }
-                          />
-                          <span>
-                            {catalog?.policies?.terms
-                              ? 'I agree to the Terms of Service and acknowledge the Privacy Policy linked above.'
-                              : 'I understand the data practices described above.'}
-                          </span>
-                        </label>
-                        <label
-                          className="consent-row"
-                          htmlFor="accept-guidelines"
-                        >
-                          <Checkbox
-                            id="accept-guidelines"
-                            checked={draft.accepted_guidelines}
-                            onCheckedChange={(value) =>
-                              change('accepted_guidelines', value === true)
-                            }
-                          />
-                          <span>
-                            I agree to the adult-only community guidelines
-                            above.
-                          </span>
-                        </label>
-                      </>
-                    )}
-                  </>
-                )}
-                {screen === 'verify' && (
-                  <>
-                    <StepHeading title="Check your inbox" ref={heading}>
-                      Enter the six-digit code for {email}. Keep this page open
-                      while you check.
-                    </StepHeading>
-                    <label className="form-field" htmlFor="email-code">
-                      Sign-in code
-                    </label>
-                    <InputOTP
-                      id="email-code"
-                      maxLength={6}
-                      pattern="^[0-9]*$"
-                      autoComplete="one-time-code"
-                      inputMode="numeric"
-                      value={code}
-                      onChange={setCode}
-                    >
-                      <InputOTPGroup>
-                        {[0, 1, 2, 3, 4, 5].map((index) => (
-                          <InputOTPSlot
-                            index={index}
-                            key={index}
-                            className="otp-slot"
-                          />
-                        ))}
-                      </InputOTPGroup>
-                    </InputOTP>
-                    <Button
-                      type="button"
-                      className="secondary-action"
-                      variant="ghost"
-                      disabled={secondsLeft > 0}
-                      onClick={() => void run(sendCode)}
-                    >
-                      {secondsLeft > 0
-                        ? `Resend in ${secondsLeft}s`
-                        : 'Resend code'}
-                    </Button>
-                    <p className="field-note">
-                      Check your spam folder too. Never share your sign-in code
-                      with anyone.
-                    </p>
-                  </>
-                )}
-                {editingPreferences && (
-                  <>
-                    <StepHeading
-                      title="Who would you like to meet?"
-                      ref={heading}
-                    >
-                      Compatibility works both ways. Gender preferences are
-                      free.
-                    </StepHeading>
-                    <PreferenceFields
-                      values={preferences}
-                      genders={catalog!.genders}
-                      onChange={setPreferences}
-                    />
-                  </>
-                )}
-              </fieldset>
-              {error && (
-                <p role="alert" className="form-error">
-                  {error}
-                </p>
-              )}
-              {notice && <output className="form-notice">{notice}</output>}
-              <div className="card-actions">
-                <Button
+        {screen === 'setup' && (
+          <form className="entry-form" onSubmit={begin}>
+            <span className="section-kicker">STEP ONE OF ONE</span>
+            <h2>Come as you are.</h2>
+            <p>
+              Pick a character and a few things you’re into. You can add more to
+              your profile later.
+            </p>
+            <h3>Choose a character</h3>
+            <div className="entry-avatar-grid">
+              {avatarOptions.map((item) => (
+                <button
                   type="button"
-                  variant="ghost"
-                  className="back-button"
-                  disabled={busy || (inOnboarding && step === 1)}
-                  onClick={() => {
-                    setError('');
-                    setNotice('');
-                    if (editingPreferences) setScreen('ready');
-                    else if (screen === 'verify') {
-                      setCode('');
-                      setChallengeId('');
-                      setScreen(returning ? 'signin' : 'onboarding');
-                    } else if (screen === 'signin') {
-                      setScreen('onboarding');
-                      setStep(1);
-                    } else setStep(step - 1);
-                  }}
+                  key={item.id}
+                  className={avatar === item.id ? 'selected' : ''}
+                  onClick={() => setAvatar(item.id)}
+                  aria-pressed={avatar === item.id}
                 >
-                  <ArrowLeft aria-hidden="true" />{' '}
-                  {editingPreferences ? 'Cancel' : 'Back'}
-                </Button>
-                <Button
-                  type="submit"
-                  className="continue-button"
-                  disabled={busy || !canContinue}
+                  <Avatar id={item.id} size="medium" />
+                  <span>{item.group}</span>
+                </button>
+              ))}
+            </div>
+            <label className="form-label">
+              Your gender <span>(only shared if you choose to)</span>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+              >
+                {catalog?.genders.map((item) => (
+                  <option key={item} value={item}>
+                    {item === 'undisclosed'
+                      ? 'Prefer not to say'
+                      : item.replaceAll('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <h3>
+              Pick a few interests <span>(optional)</span>
+            </h3>
+            <div className="choice-pills">
+              {catalog?.interests.map((item) => (
+                <button
+                  type="button"
+                  key={item}
+                  className={interests.includes(item) ? 'on' : ''}
+                  onClick={() => toggleInterest(item)}
                 >
-                  {busy
-                    ? 'Please wait…'
-                    : screen === 'verify'
-                      ? 'Verify code'
-                      : editingPreferences
-                        ? 'Save preferences'
-                        : inEmail
-                          ? account
-                            ? 'Save profile'
-                            : 'Send code'
-                          : 'Continue'}
-                  <ArrowRight aria-hidden="true" />
-                </Button>
-              </div>
-            </form>
-          </section>
-        )}
-      </div>
-      <footer className="site-footer">
-        <span className="footer-wordmark">halfknown.</span>
-        <span>A little unknown. A lot to discover.</span>
-        <small>18+ · Your boundaries come first</small>
-      </footer>
-    </main>
-  );
-}
-
-function StepHeading({
-  title,
-  children,
-  ref,
-}: {
-  title: string;
-  children: React.ReactNode;
-  ref: React.Ref<HTMLHeadingElement>;
-}) {
-  return (
-    <div className="step-heading">
-      <h2 ref={ref} tabIndex={-1}>
-        {title}
-      </h2>
-      <p>{children}</p>
-    </div>
-  );
-}
-
-function ChoiceChips({
-  values,
-  selected,
-  onChange,
-  variant = 'chips',
-}: {
-  values: string[];
-  selected: string[];
-  onChange: (value: string) => void;
-  variant?: 'chips' | 'intentions';
-}) {
-  return (
-    <div
-      className={variant === 'intentions' ? 'intention-grid' : 'interest-grid'}
-    >
-      {values.map((value) => (
-        <label
-          className={`interest-chip ${selected.includes(value) ? 'is-selected' : ''}`}
-          key={value}
-        >
-          <Checkbox
-            checked={selected.includes(value)}
-            onCheckedChange={() => onChange(value)}
-          />
-          {variant === 'intentions' ? (
-            <span className="intention-copy">
-              <span className="intention-symbol" aria-hidden="true">
-                {value === 'dating' ? (
-                  <Heart />
-                ) : value === 'flirting' ? (
-                  <Smile />
-                ) : value === 'friendship' ? (
-                  <MessageCircle />
+                  {item.replaceAll('-', ' ')}
+                </button>
+              ))}
+            </div>
+            <div className="entry-checks">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={discoverable}
+                  onChange={(e) => setDiscoverable(e.target.checked)}
+                />{' '}
+                Show my character and profile in Discover. I can change this
+                later.
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={adult}
+                  onChange={(e) => setAdult(e.target.checked)}
+                  required
+                />{' '}
+                I confirm I’m 18 or older.
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={terms}
+                  onChange={(e) => setTerms(e.target.checked)}
+                  required
+                />{' '}
+                I agree to the{' '}
+                {catalog?.policies.terms ? (
+                  <a href={catalog.policies.terms} target="_blank">
+                    terms
+                  </a>
                 ) : (
-                  <EyeOff />
+                  'terms'
+                )}{' '}
+                and{' '}
+                {catalog?.policies.privacy ? (
+                  <a href={catalog.policies.privacy} target="_blank">
+                    privacy policy
+                  </a>
+                ) : (
+                  'privacy policy'
                 )}
-              </span>
-              <strong>{label(value)}</strong>
-              <small>
-                {
-                  (
-                    {
-                      dating: 'Let’s see where this goes.',
-                      flirting: 'A spark. No pressure.',
-                      friendship: 'Find your kind of person.',
-                      conversation: 'A good place to say hello.',
-                    } as Record<string, string>
-                  )[value]
-                }
-              </small>
-            </span>
-          ) : (
-            label(value)
-          )}
-        </label>
-      ))}
-    </div>
-  );
-}
-
-function PreferenceFields({
-  values,
-  genders,
-  onChange,
-}: {
-  values: Preferences;
-  genders: string[];
-  onChange: (value: Preferences) => void;
-}) {
-  return (
-    <div className="preference-fields">
-      <fieldset>
-        <legend>Genders you are open to in Compatible Match</legend>
-        <ChoiceChips
-          values={genders}
-          selected={values.genders}
-          onChange={(value) =>
-            onChange({
-              ...values,
-              genders: toggleChoice(values.genders, value),
-            })
-          }
-        />
-      </fieldset>
-      <div className="age-range">
-        <label className="form-field" htmlFor="min-age">
-          Minimum age
-          <Input
-            id="min-age"
-            type="number"
-            min={18}
-            max={120}
-            required
-            value={Number.isNaN(values.min_age) ? '' : values.min_age}
-            onChange={(event) =>
-              onChange({ ...values, min_age: event.target.valueAsNumber })
-            }
-          />
-        </label>
-        <label className="form-field" htmlFor="max-age">
-          Maximum age
-          <Input
-            id="max-age"
-            type="number"
-            min={values.min_age || 18}
-            max={120}
-            required
-            value={Number.isNaN(values.max_age) ? '' : values.max_age}
-            onChange={(event) =>
-              onChange({ ...values, max_age: event.target.valueAsNumber })
-            }
-          />
-        </label>
-      </div>
-      <label className="consent-row" htmlFor="open-chat-opt-in">
-        <Checkbox
-          id="open-chat-opt-in"
-          checked={values.open_chat_opt_in}
-          onCheckedChange={(value) =>
-            onChange({ ...values, open_chat_opt_in: value === true })
-          }
-        />
-        <span>Also let me use Open Chat with any gender.</span>
-      </label>
-      <p className="field-note">
-        Open Chat ignores gender preferences only when both people opt in. Age,
-        language, shared intentions, and blocks still apply. You can turn this
-        off anytime.
-      </p>
+                .
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={guidelines}
+                  onChange={(e) => setGuidelines(e.target.checked)}
+                  required
+                />{' '}
+                I agree to the{' '}
+                {catalog?.policies.guidelines ? (
+                  <a href={catalog.policies.guidelines} target="_blank">
+                    community guidelines
+                  </a>
+                ) : (
+                  'community guidelines'
+                )}
+                .
+              </label>
+            </div>
+            {error && (
+              <p className="social-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              className="round-action entry-submit"
+              disabled={busy || !ready || !adult || !terms || !guidelines}
+            >
+              Enter Halfknown <ArrowRight size={18} />
+            </button>
+            <p className="entry-fine">
+              <LockKeyhole size={15} /> No email needed to start. Add one later
+              to keep your connections.
+            </p>
+          </form>
+        )}
+        {screen === 'signin' && (
+          <form className="entry-form signin-form" onSubmit={requestCode}>
+            <span className="section-kicker">WELCOME BACK</span>
+            <h2>Your people are waiting.</h2>
+            <p>
+              Enter the email linked to your profile. We’ll send you a code—no
+              password to remember.
+            </p>
+            <label className="form-label">
+              Email address
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+            </label>
+            {error && (
+              <p className="social-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              className="round-action entry-submit"
+              disabled={busy || !email.trim()}
+            >
+              Send a sign-in code <ArrowRight size={18} />
+            </button>
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => {
+                setError('');
+                setScreen('setup');
+              }}
+            >
+              New here? Join Halfknown
+            </button>
+          </form>
+        )}
+        {screen === 'verify' && (
+          <form className="entry-form signin-form" onSubmit={verifyCode}>
+            <span className="section-kicker">CHECK YOUR INBOX</span>
+            <h2>One little code.</h2>
+            <p>
+              We sent a six-digit code to <strong>{email}</strong>.
+            </p>
+            <label className="form-label">
+              Verification code
+              <input
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                placeholder="000000"
+                autoComplete="one-time-code"
+              />
+            </label>
+            {error && (
+              <p className="social-error" role="alert">
+                {error}
+              </p>
+            )}
+            <button
+              className="round-action entry-submit"
+              disabled={busy || code.length !== 6}
+            >
+              Continue <Check size={18} />
+            </button>
+            <button
+              type="button"
+              className="text-action"
+              onClick={() => {
+                setError('');
+                setScreen('signin');
+              }}
+            >
+              Use a different email
+            </button>
+          </form>
+        )}
+      </main>
     </div>
   );
 }

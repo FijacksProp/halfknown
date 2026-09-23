@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.profiles",
     "apps.moderation",
     "apps.matching",
+    "apps.social",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -115,7 +116,10 @@ REST_FRAMEWORK = {
         "user": "180/min",
         "auth_request": "10/hour",
         "auth_verify": "30/hour",
+        "random_access": "20/hour",
         "typing": "30/min",
+        "social_connect": "30/hour",
+        "social_message": "60/min",
     },
     "NUM_PROXIES": 0,
 }

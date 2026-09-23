@@ -1,6 +1,6 @@
 # Halfknown backend foundation
 
-Status: onboarding, matching queues, two-party invitations, text chat, block/report, and the local frontend integration are implemented. See [Live chat](live-chat.md) for the contract and limitations. Hosted integration is pending a deployed Django endpoint.
+Status: guest-first social discovery, follows, mutual connections, direct messages, showcases, account saving, block/report, and Quick Meet random chat are implemented locally. See the [current product specification](halfknown-product-spec.md) and [Live chat](live-chat.md). Hosted integration is pending a deployed Django endpoint.
 
 ## Architecture decision
 
@@ -38,11 +38,25 @@ API responses include private/no-store cache controls, including authentication 
 | GET | `/api/v1/me/` | Private owner account and onboarding status |
 | GET | `/api/v1/catalog/` | Allowed profile/preference values and policy version |
 | GET | `/api/v1/identity-preview/` | Generate an unreserved alias/avatar suggestion |
+| POST | `/api/v1/random-access/` | Create/prepare a session-owned guest identity after adult and policy confirmation |
 | GET | `/api/v1/profile/` | Read current owner's profile/preferences |
 | POST | `/api/v1/profile/` | Create onboarding profile only; 409 if it already exists |
 | PUT | `/api/v1/profile/` | Atomically create/update onboarding profile |
 | PUT | `/api/v1/preferences/` | Replace current owner's preferences |
 | POST | `/api/v1/blocks/` | Idempotently block a profile |
+| GET/PATCH | `/api/v1/social/me/` | Read/edit the owner's social profile and visibility |
+| GET | `/api/v1/social/discover/` | Search opt-in profiles; filter by `q`, `interest`, or `group`; paginate with `offset` |
+| GET | `/api/v1/social/profiles/<id>/` | Public profile and showcase, subject to visibility and blocks |
+| POST/DELETE | `/api/v1/social/profiles/<id>/follow/` | Follow or unfollow |
+| POST/DELETE | `/api/v1/social/profiles/<id>/connect/` | Request/reciprocate or remove a connection |
+| GET | `/api/v1/social/connections/` | Accepted and pending connections |
+| POST | `/api/v1/social/connections/<id>/accept/` | Accept an incoming request |
+| GET/POST | `/api/v1/social/connections/<id>/messages/` | Read or send free messages after acceptance |
+| POST | `/api/v1/social/showcase/` | Add a talent, project, or interest |
+| DELETE | `/api/v1/social/showcase/<id>/` | Remove a showcase item |
+| POST | `/api/v1/social/profiles/<id>/block/` | Block and remove the relationship |
+| POST | `/api/v1/social/profiles/<id>/report/` | Preserve recent evidence, report, and block |
+| POST | `/api/v1/chats/<id>/connect/` | Ask to keep in touch from an active Quick Meet chat |
 | WS | `/ws/events/` | Receive private account events |
 
 Authentication, catalog, and identity-preview endpoints are public; other APIs require an active account with verified email. Birth date is self-declared and validated server-side. This is an adult eligibility gate, not independent age assurance.
@@ -55,7 +69,7 @@ Request body:
 {"email": "person@example.com"}
 ```
 
-Response: HTTP 202 with a UUID `challenge_id` and a generic delivery message. The response never includes the code or whether the email already has an account. Email is normalized to lowercase and constrained uniquely in the database. Requesting a code for an existing user never overwrites their profile.
+Response: HTTP 202 with a UUID `challenge_id` and a generic delivery message. The response never includes the code. Email is normalized to lowercase and constrained uniquely in the database. An anonymous request does not reveal whether an email already has an account. A signed-in guest who tries to claim an email already in use receives a validation error and must sign in to that account separately; profiles are never silently merged.
 
 Verify body:
 
@@ -95,9 +109,9 @@ The selected values must come from `/api/v1/catalog/`. An example PUT body:
 }
 ```
 
-The server generates a unique alias on first completion and preserves it on update. Preview identities are illustrative, not reserved. Avatar IDs are asset references awaiting artwork. No fictional profile photographs are produced.
+The server generates a unique alias on first completion and preserves it on update. Preview identities are illustrative, not reserved. Illustrated avatar groups now include human, animal, alien, goblin, and vampire. They are fictional characters, not member photos or identity verification.
 
-PrivateProfile stores birth date and consent separately. Profile responses omit email, birth date, authentication information, and the internal account relation. The profile serializer is **owner-only**; it includes gender and must not be reused for anonymous match cards. No public profile listing exists.
+PrivateProfile stores birth date and consent separately. Profile responses omit email, birth date, authentication information, and the internal account relation. The owner serializer remains private. The social discovery serializer has a separate public allowlist and exposes only profiles whose owners opted in; older anonymous accounts are hidden by migration.
 
 Birth-date changes after initial completion are rejected pending a future support correction process. Terms and guidelines are development consent placeholders, not finalized legal documents. Policy acceptance history/version upgrades require implementation before release.
 
