@@ -6,7 +6,6 @@ import {
   ArrowRight,
   Check,
   LogOut,
-  Menu,
   MessageCircle,
   Plus,
   Search,
@@ -86,7 +85,6 @@ export function SocialWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [menuOpen, setMenuOpen] = useState(false);
   const cursor = useRef(0);
   const messageScroll = useRef<HTMLDivElement>(null);
   const openChatId = openChat?.id;
@@ -269,7 +267,6 @@ export function SocialWorkspace({
     setTab(next);
     setSelected(null);
     setOpenChat(null);
-    setMenuOpen(false);
     setError('');
   }
   function openConversation(row: ConnectionRow) {
@@ -314,18 +311,17 @@ export function SocialWorkspace({
           <button className="wordmark" onClick={() => chooseTab('discover')}>
             halfknown<span>.</span>
           </button>
-          <nav
-            className={menuOpen ? 'app-nav open' : 'app-nav'}
-            aria-label="App navigation"
-          >
+          <nav className="app-nav" aria-label="App navigation">
             <button
               className={tab === 'discover' ? 'active' : ''}
+              aria-current={tab === 'discover' ? 'page' : undefined}
               onClick={() => chooseTab('discover')}
             >
               <Search size={18} /> Discover
             </button>
             <button
               className={tab === 'connections' ? 'active' : ''}
+              aria-current={tab === 'connections' ? 'page' : undefined}
               onClick={() => chooseTab('connections')}
             >
               <Users size={18} /> Connections{' '}
@@ -333,12 +329,14 @@ export function SocialWorkspace({
             </button>
             <button
               className={tab === 'quick' ? 'active' : ''}
+              aria-current={tab === 'quick' ? 'page' : undefined}
               onClick={() => chooseTab('quick')}
             >
               <Shuffle size={18} /> Quick meet
             </button>
             <button
               className={tab === 'me' ? 'active' : ''}
+              aria-current={tab === 'me' ? 'page' : undefined}
               onClick={() => chooseTab('me')}
             >
               <UserRound size={18} /> My space
@@ -348,13 +346,6 @@ export function SocialWorkspace({
             <button className="mini-profile" onClick={() => chooseTab('me')}>
               <Avatar id={me?.avatar_id ?? saved.profile.avatar_id} size="small" />
               <span>{me?.alias ?? 'My space'}</span>
-            </button>
-            <button
-              className="mobile-menu"
-              aria-label="Toggle menu"
-              onClick={() => setMenuOpen(!menuOpen)}
-            >
-              <Menu />
             </button>
           </div>
         </div>

@@ -712,11 +712,6 @@ select {
 .app-header-actions {
   margin-left: auto;
 }
-.mobile-menu {
-  display: none;
-  border: 0;
-  background: none;
-}
 .app-main {
   padding-top: 45px;
   padding-bottom: 100px;
@@ -2170,31 +2165,50 @@ select {
     margin-top: 35px;
   }
   .app-nav {
-    position: absolute;
+    position: fixed;
     left: 0;
     right: 0;
-    top: 79px;
-    height: auto;
-    display: none;
-    background: #fffdfa;
-    padding: 10px 22px;
-    box-shadow: 0 15px 30px #35262518;
-  }
-  .app-nav.open {
+    bottom: 0;
+    top: auto;
+    z-index: 40;
+    height: calc(72px + env(safe-area-inset-bottom));
     display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 4px;
+    margin: 0;
+    background: #fffdfa;
+    border-top: 1px solid #e9e0d9;
+    padding: 5px 10px calc(5px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 24px #35262512;
   }
   .app-nav button {
-    min-height: 48px;
-    justify-content: flex-start;
+    min-width: 0;
+    min-height: 60px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
     border-bottom: 0;
+    border-radius: 11px;
+    padding: 5px 2px;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    font-weight: 750;
+  }
+  .app-nav button svg {
+    width: 21px;
+    height: 21px;
   }
   .app-nav button.active {
-    border-radius: 8px;
     background: #fff0ef;
   }
-  .mobile-menu {
-    display: inline-grid;
-    place-items: center;
+  .app-nav i {
+    position: absolute;
+    top: 4px;
+    left: calc(50% + 12px);
+  }
+  .app-main {
+    padding-bottom: calc(110px + env(safe-area-inset-bottom));
   }
   .app-header-actions {
     display: flex;
