@@ -1,6 +1,6 @@
 from django.db import connection as db_connection
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from rest_framework.response import Response
@@ -21,11 +21,11 @@ def blocked_ids(user):
     return set(made) | set(received)
 
 
-def public_profile(profile, viewer):
+def public_profile(profile, viewer, *, known_connection=None, known_connection_data=None):
     owner = profile.user_id == viewer.pk
     connection = None
     if not owner:
-        connection = connection_for(viewer, profile.user)
+        connection = known_connection or connection_for(viewer, profile.user)
         if connection and connection.status == "declined" and connection.requested_by_id != viewer.pk:
             connection = None
     return {
@@ -44,7 +44,11 @@ def public_profile(profile, viewer):
         if owner
         else Follow.objects.filter(follower=viewer, followed=profile.user).exists(),
         "followers_count": Follow.objects.filter(followed=profile.user).count(),
-        "connection": connection_data(connection, viewer) if connection else None,
+        "connection": (
+            known_connection_data
+            if known_connection_data is not None
+            else connection_data(connection, viewer) if connection else None
+        ),
         "showcase": [showcase_data(item) for item in profile.user.showcase.order_by("-created_at")[:6]],
     }
 
@@ -71,16 +75,22 @@ def connection_for(user, peer):
 def request_connection(user, peer):
     first, second = pair_ids(user, peer)
     with transaction.atomic():
+        changed = False
         connection, created = Connection.objects.get_or_create(
             first=first, second=second, defaults={"requested_by": user, "status": "pending"}
         )
+        changed = created
         if not created and connection.status == "pending" and connection.requested_by_id != user.pk:
             connection.status = "accepted"
             connection.save(update_fields=["status", "updated_at"])
+            changed = True
         elif not created and connection.status == "declined" and connection.requested_by_id != user.pk:
             connection.status = "pending"
             connection.requested_by = user
             connection.save(update_fields=["status", "requested_by", "updated_at"])
+            changed = True
+        if changed:
+            notify([first.pk, second.pk], {"type": "social.connection.changed", "connection_id": str(connection.pk)})
     return connection, created
 
 
@@ -237,7 +247,9 @@ class ConnectionView(APIView):
     def delete(self, request, profile_id):
         target = get_object_or_404(Profile, pk=profile_id)
         first, second = pair_ids(request.user, target.user)
-        Connection.objects.filter(first=first, second=second).exclude(status="declined").delete()
+        removed, _ = Connection.objects.filter(first=first, second=second).exclude(status="declined").delete()
+        if removed:
+            notify([first.pk, second.pk], {"type": "social.connection.changed"})
         return Response(status=204)
 
 
@@ -255,6 +267,7 @@ class ConnectionAcceptView(APIView):
             return Response({"detail": "Request unavailable."}, status=404)
         connection.status = "accepted"
         connection.save(update_fields=["status", "updated_at"])
+        notify([connection.first_id, connection.second_id], {"type": "social.connection.changed", "connection_id": str(connection.pk)})
         return Response(connection_data(connection, request.user))
 
 
@@ -288,11 +301,6 @@ class QuickConnectionView(APIView):
         if not chat:
             return Response({"detail": "Conversation unavailable."}, status=409)
         connection, created = request_connection(request.user, peer)
-        if connection.status != "declined":
-            notify(
-                [chat.first_id, chat.second_id],
-                {"type": "connection.changed", "conversation_id": str(chat.pk)},
-            )
         return Response(connection_data(connection, request.user), status=201 if created else 200)
 
     def delete(self, request, chat_id):
@@ -313,21 +321,42 @@ class QuickConnectionView(APIView):
 
 class ConnectionsView(APIView):
     def get(self, request):
+        latest = DirectMessage.objects.filter(connection_id=OuterRef("pk")).order_by("-pk")
         connections = (
             Connection.objects.filter(Q(first=request.user) | Q(second=request.user))
             .exclude(status="declined")
+            .annotate(
+                last_message_body=Subquery(latest.values("body")[:1]),
+                last_message_created_at=Subquery(latest.values("created_at")[:1]),
+                last_message_sender_id=Subquery(latest.values("sender_id")[:1]),
+            )
             .select_related("first__profile", "second__profile")
-            .order_by("-updated_at")[:100]
+            .order_by(F("last_message_created_at").desc(nulls_last=True), "-updated_at")[:100]
         )
         hidden = blocked_ids(request.user)
         results = []
         for connection in connections:
             peer = connection.second if connection.first_id == request.user.pk else connection.first
             if peer.pk not in hidden and hasattr(peer, "profile"):
+                data = connection_data(connection, request.user)
                 results.append(
                     {
-                        "peer": public_profile(peer.profile, request.user),
-                        **connection_data(connection, request.user),
+                        "peer": public_profile(
+                            peer.profile,
+                            request.user,
+                            known_connection=connection,
+                            known_connection_data=data,
+                        ),
+                        "last_message": (
+                            {
+                                "body": connection.last_message_body,
+                                "mine": str(connection.last_message_sender_id).replace("-", "") == request.user.pk.hex,
+                                "created_at": connection.last_message_created_at.isoformat(),
+                            }
+                            if connection.last_message_created_at
+                            else None
+                        ),
+                        **data,
                     }
                 )
         return Response({"results": results})
@@ -370,6 +399,7 @@ class MessagesView(APIView):
             if current_read_at is None or latest_seen > current_read_at:
                 setattr(connection, read_field, latest_seen)
                 connection.save(update_fields=[read_field])
+        # Reading is persisted before the response; a later inbox refresh sees the new count.
         return Response({"results": [self.output(message, request.user) for message in messages]})
 
     def post(self, request, connection_id):
@@ -380,6 +410,10 @@ class MessagesView(APIView):
         data.is_valid(raise_exception=True)
         message = DirectMessage.objects.create(
             connection=connection, sender=request.user, **data.validated_data
+        )
+        notify(
+            [connection.first_id, connection.second_id],
+            {"type": "social.message.changed", "connection_id": str(connection.pk)},
         )
         return Response(self.output(message, request.user), status=201)
 
@@ -453,4 +487,5 @@ class SocialSafetyView(APIView):
             ).delete()
             first, second = pair_ids(request.user, target.user)
             Connection.objects.filter(first=first, second=second).delete()
+            notify([first.pk, second.pk], {"type": "social.connection.changed"})
         return Response(status=204)

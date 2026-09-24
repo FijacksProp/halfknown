@@ -20,6 +20,7 @@ import {
   api,
   type Account,
   type Catalog,
+  type InboxMessage,
   type SavedProfile,
   type SocialConnection,
   type SocialMessage,
@@ -29,10 +30,21 @@ import { Avatar } from './avatar';
 import { ChatWorkspace } from './chat-workspace';
 
 type Tab = 'discover' | 'connections' | 'me' | 'quick';
-type ConnectionRow = SocialConnection & { peer: SocialProfile };
+type ConnectionRow = SocialConnection & {
+  peer: SocialProfile;
+  last_message: InboxMessage | null;
+};
 
 function nice(value: string) {
   return value.replaceAll('-', ' ').replaceAll('_', ' ');
+}
+
+function inboxTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toDateString() === new Date().toDateString()
+    ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 export function SocialWorkspace({
@@ -57,6 +69,7 @@ export function SocialWorkspace({
   const [selected, setSelected] = useState<SocialProfile | null>(null);
   const [openChat, setOpenChat] = useState<ConnectionRow | null>(null);
   const [messages, setMessages] = useState<SocialMessage[]>([]);
+  const [messageLoading, setMessageLoading] = useState(false);
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('');
@@ -86,15 +99,20 @@ export function SocialWorkspace({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const cursor = useRef(0);
+  const inboxRequest = useRef(0);
+  const activeChatId = useRef<string | null>(null);
+  const refreshMessages = useRef<(() => Promise<void>) | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
   const openChatId = openChat?.id;
-  const availablePortraits = (catalog.avatar_groups[me?.avatar_group ?? ''] ?? []).filter(
-    (id) =>
-      me?.gender === 'woman'
-        ? id.endsWith('-female')
-        : me?.gender === 'man'
-          ? id.endsWith('-male')
-          : true,
+  activeChatId.current = openChatId ?? null;
+  const availablePortraits = (
+    catalog.avatar_groups[me?.avatar_group ?? ''] ?? []
+  ).filter((id) =>
+    me?.gender === 'woman'
+      ? id.endsWith('-female')
+      : me?.gender === 'man'
+        ? id.endsWith('-male')
+        : true,
   );
 
   useEffect(() => {
@@ -120,7 +138,21 @@ export function SocialWorkspace({
     [query, group, interest],
   );
   const loadConnections = useCallback(
-    async () => setConnections((await api.connections()).results),
+    async () => {
+      const request = ++inboxRequest.current;
+      const result = await api.connections();
+      if (request === inboxRequest.current) {
+        setConnections(result.results);
+        if (
+          activeChatId.current &&
+          !result.results.some((row) => row.id === activeChatId.current)
+        ) {
+          setOpenChat(null);
+          setMessages([]);
+          setNotice('This connection is no longer available.');
+        }
+      }
+    },
     [],
   );
   const applySelf = useCallback((profile: SocialProfile) => {
@@ -186,30 +218,77 @@ export function SocialWorkspace({
   }, [loadPeople]);
 
   useEffect(() => {
-    if (tab !== 'connections') return;
     let alive = true;
-    void loadConnections().catch((reason) => {
-      if (alive)
-        setError(
-          reason instanceof Error ? reason.message : 'Could not load connections.',
-        );
-    });
+    let socket: WebSocket | null = null;
+    let reconnect: ReturnType<typeof setTimeout> | null = null;
+    let retry = 0;
+    const sync = () => void loadConnections().catch(() => undefined);
+    const connect = () => {
+      if (!alive) return;
+      socket = new WebSocket(
+        `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/events/`,
+      );
+      socket.onopen = () => {
+        retry = 0;
+        sync();
+      };
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (
+            data.type === 'social.connection.changed' ||
+            data.type === 'social.message.changed' ||
+            data.type === 'connection.changed'
+          ) {
+            sync();
+            if (
+              data.type === 'social.message.changed' &&
+              data.connection_id === activeChatId.current
+            )
+              void refreshMessages.current?.();
+          }
+        } catch {
+          // Polling recovers missed invalidations.
+        }
+      };
+      socket.onclose = (event) => {
+        if (alive && event.code !== 4401)
+          reconnect = setTimeout(
+            connect,
+            Math.min(2000 * 2 ** retry++, 20000),
+          );
+      };
+      socket.onerror = () => socket?.close();
+    };
+    connect();
     const timer = setInterval(() => {
-      void loadConnections().catch(() => undefined);
-    }, 8000);
+      if (!document.hidden) sync();
+    }, 15000);
+    const onFocus = () => sync();
+    window.addEventListener('focus', onFocus);
     return () => {
       alive = false;
       clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      if (reconnect) clearTimeout(reconnect);
+      socket?.close();
     };
-  }, [tab, loadConnections]);
+  }, [loadConnections]);
 
   useEffect(() => {
-    if (!openChatId) return;
+    if (!openChatId) {
+      refreshMessages.current = null;
+      return;
+    }
     let alive = true;
+    let inFlight = false;
     const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const page = await api.socialMessages(openChatId, cursor.current);
         if (!alive) return;
+        setMessageLoading(false);
         if (page.results.length) {
           cursor.current = page.results[page.results.length - 1].id;
           setMessages((previous) => {
@@ -224,20 +303,26 @@ export function SocialWorkspace({
           }
         }
       } catch (reason) {
-        if (alive)
+        if (alive) {
+          setMessageLoading(false);
           setError(
             reason instanceof Error
               ? reason.message
               : 'Could not load messages.',
           );
+        }
+      } finally {
+        inFlight = false;
       }
     };
+    refreshMessages.current = refresh;
     void refresh();
     const timer = setInterval(() => {
       void refresh();
-    }, 4000);
+    }, 8000);
     return () => {
       alive = false;
+      refreshMessages.current = null;
       clearInterval(timer);
     };
   }, [openChatId, loadConnections]);
@@ -272,6 +357,7 @@ export function SocialWorkspace({
   function openConversation(row: ConnectionRow) {
     cursor.current = 0;
     setMessages([]);
+    setMessageLoading(true);
     setDraft('');
     setOpenChat(row);
     setTab('connections');
@@ -283,8 +369,12 @@ export function SocialWorkspace({
     const text = draft.trim();
     await act(async () => {
       const message = await api.sendSocialMessage(openChat.id, text);
-      setMessages((previous) => [...previous, message]);
-      setDraft('');
+      if (activeChatId.current === openChat.id) {
+        setMessages((previous) => [...previous, message]);
+        setDraft('');
+        void refreshMessages.current?.();
+      }
+      void loadConnections().catch(() => undefined);
     });
   }
   function toggleValue(
@@ -325,7 +415,8 @@ export function SocialWorkspace({
               onClick={() => chooseTab('connections')}
             >
               <Users size={18} /> Connections{' '}
-              {pending.some((item) => item.direction === 'incoming') && <i />}
+              {(pending.some((item) => item.direction === 'incoming') ||
+                accepted.some((item) => item.unread_count > 0)) && <i />}
             </button>
             <button
               className={tab === 'quick' ? 'active' : ''}
@@ -642,11 +733,7 @@ export function SocialWorkspace({
                 {accepted.length ? (
                   accepted.map((row) => (
                     <button
-                      className={
-                        openChat?.id === row.id
-                          ? 'connection-item active'
-                          : 'connection-item'
-                      }
+                      className={`connection-item${openChat?.id === row.id ? ' active' : ''}${row.unread_count ? ' unread' : ''}`}
                       key={row.id}
                       onClick={() => openConversation(row)}
                       aria-label={`Open conversation with ${row.peer.alias}${
@@ -658,15 +745,26 @@ export function SocialWorkspace({
                       <Avatar id={row.peer.avatar_id} size="small" />
                       <span className="connection-item-copy">
                         <strong>{row.peer.alias}</strong>
-                        <small>Open conversation</small>
+                        <small className="inbox-preview">
+                          {row.last_message
+                            ? `${row.last_message.mine ? 'You: ' : ''}${row.last_message.body}`
+                            : 'Start a conversation'}
+                        </small>
                       </span>
                       <span className="connection-item-actions" aria-hidden="true">
-                        <MessageCircle size={19} />
-                        {row.unread_count > 0 && (
-                          <span className="unread-count">
-                            {row.unread_count > 99 ? '99+' : row.unread_count}
-                          </span>
+                        {row.last_message && (
+                          <time dateTime={row.last_message.created_at}>
+                            {inboxTime(row.last_message.created_at)}
+                          </time>
                         )}
+                        <span className="inbox-chat-icon">
+                          <MessageCircle size={19} />
+                          {row.unread_count > 0 && (
+                            <span className="unread-count">
+                              {row.unread_count > 99 ? '99+' : row.unread_count}
+                            </span>
+                          )}
+                        </span>
                       </span>
                     </button>
                   ))
@@ -696,7 +794,9 @@ export function SocialWorkspace({
                       </button>
                     </div>
                     <div className="message-scroll" ref={messageScroll}>
-                      {messages.length ? (
+                      {messageLoading ? (
+                        <div className="conversation-start">Loading conversation…</div>
+                      ) : messages.length ? (
                         messages.map((message) => (
                           <div
                             key={message.id}

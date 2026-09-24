@@ -1,4 +1,5 @@
 import re
+from unittest.mock import patch
 
 import pytest
 from django.core import mail
@@ -77,6 +78,47 @@ def test_unread_count_uses_last_reply_for_existing_conversations(signed_in, user
 
     DirectMessage.objects.create(connection=connection, sender=peer, body="Another new message")
     assert signed_in.get(connections_path).data["results"][0]["unread_count"] == 1
+
+
+def test_inbox_orders_by_latest_message_and_previews_only_participant_messages(signed_in, user):
+    create_profile(user)
+    older_peer = User.objects.create_user("older@example.com", email_verified_at=timezone.now())
+    newer_peer = User.objects.create_user("newer@example.com", email_verified_at=timezone.now())
+    create_profile(older_peer)
+    create_profile(newer_peer)
+    older = Connection.objects.create(first=user, second=older_peer, requested_by=user, status="accepted")
+    newer = Connection.objects.create(first=user, second=newer_peer, requested_by=user, status="accepted")
+    DirectMessage.objects.create(connection=newer, sender=user, body="My earlier note")
+    DirectMessage.objects.create(connection=older, sender=older_peer, body="Latest hello")
+
+    rows = signed_in.get("/api/v1/social/connections/").data["results"]
+    assert [row["id"] for row in rows] == [str(older.pk), str(newer.pk)]
+    assert rows[0]["last_message"]["body"] == "Latest hello"
+    assert rows[0]["last_message"]["mine"] is False
+    assert rows[0]["unread_count"] == 1
+    assert rows[1]["last_message"]["mine"] is True
+
+
+def test_inbox_changes_emit_private_body_free_events(signed_in, user):
+    create_profile(user)
+    peer = User.objects.create_user("event-peer@example.com", email_verified_at=timezone.now())
+    peer_profile = create_profile(peer, discoverable=True)
+    peer_client = APIClient()
+    peer_client.force_login(peer)
+
+    with patch("apps.social.views.notify") as publish:
+        request = signed_in.post(f"/api/v1/social/profiles/{peer_profile.pk}/connect/")
+        assert request.status_code == 201
+        assert publish.call_args.args[1]["type"] == "social.connection.changed"
+        connection_id = request.data["id"]
+        assert peer_client.post(f"/api/v1/social/connections/{connection_id}/accept/").status_code == 200
+        assert publish.call_args.args[1]["type"] == "social.connection.changed"
+        assert signed_in.post(
+            f"/api/v1/social/connections/{connection_id}/messages/", {"body": "Private hello"}
+        ).status_code == 201
+        event = publish.call_args.args[1]
+        assert event == {"type": "social.message.changed", "connection_id": connection_id}
+        assert "Private hello" not in str(event)
 
 
 def test_showcase_and_private_profile(signed_in, user):

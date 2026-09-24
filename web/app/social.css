@@ -1209,13 +1209,34 @@ select {
   color: #8b7c7f;
   font-size: 0.73rem;
 }
+.connection-item .inbox-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-item.unread .inbox-preview {
+  color: #514044;
+  font-weight: 800;
+}
 .connection-item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 54px;
+  color: #8b7c7f;
+}
+.connection-item-actions time {
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.inbox-chat-icon {
   position: relative;
   display: inline-grid;
   place-items: center;
   width: 27px;
   height: 27px;
-  flex: 0 0 27px;
 }
 .connection-item-actions svg {
   color: var(--red);

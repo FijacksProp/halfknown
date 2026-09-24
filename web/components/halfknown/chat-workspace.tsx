@@ -152,7 +152,8 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
           } else if (
             data.type === 'chat.changed' ||
             data.type === 'match.changed' ||
-            data.type === 'connection.changed'
+            data.type === 'connection.changed' ||
+            data.type === 'social.connection.changed'
           )
             void refresh();
         } catch {

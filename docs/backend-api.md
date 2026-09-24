@@ -49,7 +49,7 @@ API responses include private/no-store cache controls, including authentication 
 | GET | `/api/v1/social/profiles/<id>/` | Public profile and showcase, subject to visibility and blocks |
 | POST/DELETE | `/api/v1/social/profiles/<id>/follow/` | Follow or unfollow |
 | POST/DELETE | `/api/v1/social/profiles/<id>/connect/` | Request/reciprocate or remove a connection |
-| GET | `/api/v1/social/connections/` | Accepted and pending connections |
+| GET | `/api/v1/social/connections/` | Accepted and pending connections, newest-message preview/time, and unread count |
 | POST | `/api/v1/social/connections/<id>/accept/` | Accept an incoming request |
 | GET/POST | `/api/v1/social/connections/<id>/messages/` | Read or send free messages after acceptance |
 | POST | `/api/v1/social/showcase/` | Add a talent, project, or interest |
@@ -58,6 +58,8 @@ API responses include private/no-store cache controls, including authentication 
 | POST | `/api/v1/social/profiles/<id>/report/` | Preserve recent evidence, report, and block |
 | POST | `/api/v1/chats/<id>/connect/` | Ask to keep in touch from an active Quick Meet chat |
 | WS | `/ws/events/` | Receive private account events |
+
+Connection requests, acceptance/removal, and direct messages send body-free `social.connection.changed` or `social.message.changed` events to the two participants. Clients then refetch the authorized inbox/message APIs; periodic polling recovers missed events. A conversation's unread count advances only when its messages are fetched, and its last-message preview is available only to participants.
 
 Authentication, catalog, and identity-preview endpoints are public; other APIs require an active account with verified email. Birth date is self-declared and validated server-side. This is an adult eligibility gate, not independent age assurance.
 

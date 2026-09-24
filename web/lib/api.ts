@@ -88,6 +88,11 @@ export type SocialConnection = {
   direction: 'incoming' | 'outgoing';
   unread_count: number;
 };
+export type InboxMessage = {
+  body: string;
+  mine: boolean;
+  created_at: string;
+};
 export type SocialProfile = {
   id: string;
   alias: string;
@@ -291,7 +296,12 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
     disconnect: (id: string) =>
       request<void>(`/social/profiles/${id}/connect/`, 'DELETE'),
     connections: () =>
-      request<{ results: (SocialConnection & { peer: SocialProfile })[] }>(
+      request<{
+        results: (SocialConnection & {
+          peer: SocialProfile;
+          last_message: InboxMessage | null;
+        })[];
+      }>(
         '/social/connections/',
       ),
     acceptConnection: (id: string) =>
