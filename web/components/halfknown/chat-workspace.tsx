@@ -77,7 +77,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
           setDraft('');
           pending.current = null;
           setConnection(null);
-          setNotice('A stranger joined. Say hello when you’re ready.');
+          setNotice('You’re connected.');
         }
         currentChat.current = next;
         let more = true;
@@ -103,7 +103,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
         }
       } else {
         if (currentChat.current && next.state === 'waiting') {
-          setNotice('That conversation ended. Looking for someone new…');
+          setNotice('Chat ended. Finding someone new…');
         }
         currentChat.current = null;
         cursor.current = 0;
@@ -193,6 +193,12 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
       area.scrollTop = area.scrollHeight;
   }, [messages]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(''), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
   async function action(work: () => Promise<void>) {
     if (working.current) return;
     working.current = true;
@@ -229,7 +235,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
   function start() {
     void action(async () => {
       resetConversation(await api.joinQueue());
-      setNotice('Looking through everyone online right now…');
+      setNotice('');
     });
   }
 
@@ -238,7 +244,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
     const chatId = state.id;
     void action(async () => {
       resetConversation(await api.nextPerson(chatId));
-      setNotice('Shuffling for someone new…');
+      setNotice('');
     });
   }
 
@@ -258,9 +264,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
     void action(async () => {
       await api.declineQuickConnection(chatId);
       setConnection(null);
-      setNotice(
-        'You passed on that request. You can keep chatting or move on.',
-      );
+      setNotice('Request declined.');
     });
   }
 
@@ -330,18 +334,14 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
       {(state.state === 'idle' || state.state === 'ended') && loaded && (
         <div className="start-panel">
           <div className="quick-intro-copy">
-            <span className="section-kicker">THE NEXT HELLO IS A SURPRISE</span>
-            <h2>Some conversations start by chance.</h2>
-            <p>
-              Meet one person at a time. You can stay anonymous, move on, or
-              choose together to keep talking.
-            </p>
+            <h2>Quick meet</h2>
+            <p>Chat with someone online. Skip anytime.</p>
             <Button className="round-action" disabled={busy} onClick={start}>
-              Start a random chat <Dice5 aria-hidden="true" />
+              Find someone <Dice5 aria-hidden="true" />
             </Button>
             <p className="chat-privacy">
-              Chats are stored and aren’t end-to-end encrypted. You can block or
-              report anyone.
+              Chats are saved and aren’t end-to-end encrypted. Block or report
+              anytime.
             </p>
           </div>
           <div className="quick-intro-art" aria-hidden="true">
@@ -364,11 +364,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
             <span className="quick-waiting-line" />
             <Avatar id="goblin-female" />
           </div>
-          <span className="section-kicker">LOOKING AROUND</span>
-          <h2>Finding your next hello…</h2>
-          <p>
-            Keep this tab open. We’ll introduce you when someone is available.
-          </p>
+          <h2>Finding someone…</h2>
           <Button
             className="outline-action"
             disabled={busy}
@@ -385,7 +381,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
             <div className="quick-peer">
               <Avatar id={chat.peer.avatar_id} size="small" />
               <div>
-                <span>YOUR RANDOM CHAT</span>
+                <span>QUICK MEET</span>
                 <h2>{chat.peer.alias}</h2>
               </div>
             </div>
@@ -416,9 +412,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
               <div className="quick-connection-request" role="status">
                 <div>
                   <strong>{chat.peer.alias} wants to keep in touch.</strong>
-                  <p>
-                    If you both agree, you can find each other in Connections.
-                  </p>
+                  <p>Accept to add them to Connections.</p>
                 </div>
                 <div className="quick-request-actions">
                   <Button disabled={busy} onClick={keepInTouch}>
@@ -433,25 +427,23 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
           {connection?.status === 'pending' &&
             connection.direction === 'outgoing' && (
               <div className="quick-connection-note" role="status">
-                Your request is with {chat.peer.alias}. They can decide whether
-                to keep in touch.
+                Request sent to {chat.peer.alias}.
               </div>
-            )}
+          )}
           {connection?.status === 'accepted' && (
             <div className="quick-connection-note" role="status">
-              You both chose to keep in touch. Find each other in Connections.
+              Connected. Find this chat in Connections.
             </div>
           )}
           {connection?.status === 'declined' && (
             <div className="quick-connection-note" role="status">
-              Your request wasn’t accepted. You can keep chatting or move on.
+              Request declined. You can keep chatting or skip.
             </div>
           )}
           <div className="message-list" ref={scrollArea} aria-live="polite">
             {messages.length === 0 && (
               <div className="message-empty">
-                <strong>Your chat starts here.</strong>
-                <p>Say hello or ask something you’re curious about.</p>
+                <strong>Say hello.</strong>
               </div>
             )}
             {messages.map((message) => (
@@ -478,7 +470,7 @@ export function ChatWorkspace({ saved }: { saved: SavedProfile }) {
               value={draft}
               maxLength={2000}
               rows={2}
-              placeholder="Type what you actually want to say…"
+              placeholder="Write a message…"
               onChange={(event) => {
                 setDraft(event.target.value);
                 if (Date.now() - lastTyping.current > 2500) {

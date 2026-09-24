@@ -8,6 +8,7 @@ export const emptyPreferences = (): Preferences => ({
 });
 
 export const emptyDraft = (): Onboarding => ({
+  username: '',
   birth_date: '',
   gender: '',
   intentions: ['dating'],
@@ -63,7 +64,8 @@ export function toggleChoice(
 }
 
 export function stepValid(step: number, draft: Onboarding): boolean {
-  if (step === 1) return draft.intentions.length > 0;
+  if (step === 1)
+    return draft.intentions.length > 0 && /^[a-z][a-z0-9_]{2,23}$/.test(draft.username);
   if (step === 2)
     return (
       adultBirthDate(draft.birth_date) &&

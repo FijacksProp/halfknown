@@ -6,6 +6,33 @@ from .catalog import AVATARS, GENDERS, INTENTIONS, INTERESTS, STYLES, age_on
 from .models import MatchPreferences, Profile
 
 
+RESERVED_USERNAMES = {"admin", "administrator", "halfknown", "moderator", "support"}
+
+
+class UsernameField(serializers.RegexField):
+    def __init__(self, **kwargs):
+        super().__init__(
+            r"^[a-z][a-z0-9_]{2,23}$",
+            max_length=24,
+            error_messages={"invalid": "Use 3–24 letters, numbers or underscores, starting with a letter."},
+            **kwargs,
+        )
+
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            data = data.strip().lower()
+        value = super().to_internal_value(data)
+        if value in RESERVED_USERNAMES:
+            raise serializers.ValidationError("This username is reserved.")
+        request = self.parent.context.get("request")
+        existing = Profile.objects.filter(alias__iexact=value)
+        if request and request.user.is_authenticated:
+            existing = existing.exclude(user=request.user)
+        if existing.exists():
+            raise serializers.ValidationError("This username is already taken.")
+        return value
+
+
 class UniqueChoices(serializers.ListField):
     def __init__(self, choices, **kwargs):
         super().__init__(child=serializers.ChoiceField(choices=choices), **kwargs)
@@ -30,6 +57,7 @@ class PreferenceInput(serializers.Serializer):
 
 
 class OnboardingInput(serializers.Serializer):
+    username = UsernameField()
     birth_date = serializers.DateField()
     accepted_terms = serializers.BooleanField()
     accepted_guidelines = serializers.BooleanField()

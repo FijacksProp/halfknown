@@ -29,10 +29,11 @@ from .catalog import (
     avatar_choices,
 )
 from .models import MatchPreferences, PrivateProfile, Profile, new_alias
-from .serializers import OnboardingInput, PreferenceInput, PreferencesOutput, ProfileOutput
+from .serializers import OnboardingInput, PreferenceInput, PreferencesOutput, ProfileOutput, UsernameField
 
 
 class RandomAccessInput(serializers.Serializer):
+    username = UsernameField()
     gender = serializers.ChoiceField(choices=GENDERS)
     adult_confirmed = serializers.BooleanField()
     accepted_terms = serializers.BooleanField()
@@ -64,7 +65,7 @@ class RandomAccessView(APIView):
     throttle_scope = "random_access"
 
     def post(self, request):
-        data = RandomAccessInput(data=request.data)
+        data = RandomAccessInput(data=request.data, context={"request": request})
         data.is_valid(raise_exception=True)
         values = data.validated_data
         now = timezone.now()
@@ -89,6 +90,7 @@ class RandomAccessView(APIView):
             profile, created = Profile.objects.get_or_create(
                 user=user,
                 defaults={
+                    "alias": values["username"],
                     "avatar_group": group,
                     "avatar_id": avatar_id,
                     "gender": values["gender"],
@@ -100,6 +102,7 @@ class RandomAccessView(APIView):
                 },
             )
             profile.gender = values["gender"]
+            profile.alias = values["username"]
             if not created:
                 group = profile.avatar_group or profile.avatar_id.split("-")[0]
                 if group not in AVATAR_GROUPS:
@@ -118,6 +121,7 @@ class RandomAccessView(APIView):
             profile.save(
                 update_fields=[
                     "gender",
+                    "alias",
                     "avatar_group",
                     "avatar_id",
                     "interests",
@@ -201,9 +205,10 @@ class ProfileView(APIView):
         return self.save_profile(request, create_only=True)
 
     def save_profile(self, request, *, create_only):
-        data = OnboardingInput(data=request.data)
+        data = OnboardingInput(data=request.data, context={"request": request})
         data.is_valid(raise_exception=True)
         values = dict(data.validated_data)
+        values["alias"] = values.pop("username")
         requested_avatar = values.pop("avatar_id", None)
         preferences = values.pop("preferences")
         birth_date = values.pop("birth_date")

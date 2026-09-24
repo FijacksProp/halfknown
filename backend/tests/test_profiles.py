@@ -1,4 +1,5 @@
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
@@ -10,6 +11,7 @@ pytestmark = pytest.mark.django_db
 
 def random_access_payload(settings, **overrides):
     return {
+        "username": "newguest",
         "gender": "undisclosed",
         "adult_confirmed": True,
         "accepted_terms": True,
@@ -28,6 +30,7 @@ def test_guest_can_enter_random_chat_without_email(client, settings):
     assert response.data["account"]["email"] == ""
     assert response.data["profile"]["intentions"] == ["conversation"]
     assert response.data["profile"]["interests"] == []
+    assert response.data["profile"]["alias"] == "newguest"
     assigned = response.data["profile"]
     assert assigned["avatar_group"] in AVATAR_GROUPS
     assert assigned["avatar_id"] in AVATAR_GROUPS[assigned["avatar_group"]]
@@ -36,6 +39,28 @@ def test_guest_can_enter_random_chat_without_email(client, settings):
     assert user.private_profile.birth_date is None
     assert user.private_profile.adult_confirmed_at
     assert client.post("/api/v1/matching/queue/", {}, format="json").data["state"] == "waiting"
+
+
+def test_guest_username_is_required_unique_and_normalized(client, settings):
+    missing = random_access_payload(settings)
+    missing.pop("username")
+    assert client.post("/api/v1/random-access/", missing, format="json").status_code == 400
+    assert User.objects.count() == 0
+
+    first = client.post(
+        "/api/v1/random-access/", random_access_payload(settings, username="  River_Fox  "), format="json"
+    )
+    assert first.status_code == 201
+    assert first.data["profile"]["alias"] == "river_fox"
+    another = APIClient()
+    duplicate = another.post(
+        "/api/v1/random-access/", random_access_payload(settings, username="RIVER_FOX"), format="json"
+    )
+    assert duplicate.status_code == 400
+    assert "username" in duplicate.data
+    assert another.post(
+        "/api/v1/random-access/", random_access_payload(settings, username="admin"), format="json"
+    ).status_code == 400
 
 
 @pytest.mark.parametrize(
@@ -70,6 +95,19 @@ def test_profile_created_atomically_and_private_fields_hidden(signed_in, user, p
     alias = response.data["profile"]["alias"]
     assert signed_in.put("/api/v1/profile/", profile_payload, format="json").data["profile"]["alias"] == alias
     assert Profile.objects.count() == 1
+
+
+def test_existing_profile_can_change_username_but_cannot_take_another(signed_in, user, profile_payload):
+    assert signed_in.put("/api/v1/profile/", profile_payload, format="json").status_code == 201
+    changed = signed_in.patch("/api/v1/social/me/", {"username": "My_New_Name"}, format="json")
+    assert changed.status_code == 200
+    assert changed.data["alias"] == "my_new_name"
+    assert Profile.objects.get(user=user).alias == "my_new_name"
+    other = User.objects.create_user("other-name@example.com", email_verified_at=timezone.now())
+    Profile.objects.create(user=other, alias="alreadyused", avatar_id="human-male", gender="man")
+    rejected = signed_in.patch("/api/v1/social/me/", {"username": "AlreadyUsed"}, format="json")
+    assert rejected.status_code == 400
+    assert Profile.objects.get(user=user).alias == "my_new_name"
 
 
 @pytest.mark.parametrize("gender,suffix", [("woman", "female"), ("man", "male")])

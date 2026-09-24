@@ -32,6 +32,7 @@ def signed_in(client, user):
 @pytest.fixture
 def profile_payload(settings):
     return {
+        "username": "sampleperson",
         "birth_date": "2000-01-01",
         "accepted_terms": True,
         "accepted_guidelines": True,

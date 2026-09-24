@@ -11,6 +11,7 @@ from apps.matching.services import block_peer, chat_eligible, chat_for, notify
 from apps.moderation.models import Block
 from apps.profiles.catalog import AVATAR_GROUPS, AVATARS, INTENTIONS, INTERESTS, avatar_choices
 from apps.profiles.models import Profile
+from apps.profiles.serializers import UsernameField
 
 from .models import Connection, DirectMessage, Follow, ShowcaseItem, SocialReport
 
@@ -68,8 +69,9 @@ def pair_ids(user, peer):
 
 
 def connection_for(user, peer):
-    first, second = pair_ids(user, peer)
-    return Connection.objects.filter(first=first, second=second).first()
+    return Connection.objects.filter(
+        Q(first=user, second=peer) | Q(first=peer, second=user)
+    ).first()
 
 
 def request_connection(user, peer):
@@ -122,12 +124,19 @@ def connection_data(connection, viewer):
 
 def visible_target(viewer, profile_id):
     target = get_object_or_404(Profile.objects.select_related("user"), pk=profile_id, user__is_active=True)
-    if target.user_id in blocked_ids(viewer) or (not target.discoverable and target.user_id != viewer.pk):
+    if target.user_id in blocked_ids(viewer):
         return None
+    if not target.discoverable and target.user_id != viewer.pk:
+        if not Connection.objects.filter(
+            Q(first=viewer, second=target.user) | Q(first=target.user, second=viewer),
+            status="accepted",
+        ).exists():
+            return None
     return target
 
 
 class ProfileEditInput(serializers.Serializer):
+    username = UsernameField(required=False)
     avatar_id = serializers.ChoiceField(choices=AVATARS, required=False)
     bio = serializers.CharField(max_length=300, allow_blank=True, required=False)
     prompt_answer = serializers.CharField(max_length=280, allow_blank=True, required=False)
@@ -153,7 +162,7 @@ class SelfView(APIView):
 
     def patch(self, request):
         profile = get_object_or_404(Profile, user=request.user)
-        data = ProfileEditInput(data=request.data)
+        data = ProfileEditInput(data=request.data, context={"request": request})
         data.is_valid(raise_exception=True)
         if "avatar_id" in data.validated_data:
             group = profile.avatar_group or profile.avatar_id.split("-")[0]
@@ -163,9 +172,10 @@ class SelfView(APIView):
                 )
             profile.avatar_group = group
         for key, value in data.validated_data.items():
-            setattr(profile, key, value)
+            setattr(profile, "alias" if key == "username" else key, value)
         if data.validated_data:
-            update_fields = [*data.validated_data.keys(), "updated_at"]
+            update_fields = ["alias" if key == "username" else key for key in data.validated_data]
+            update_fields.append("updated_at")
             if "avatar_id" in data.validated_data:
                 update_fields.append("avatar_group")
             profile.save(update_fields=update_fields)

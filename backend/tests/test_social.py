@@ -136,8 +136,30 @@ def test_showcase_and_private_profile(signed_in, user):
     assert signed_in.delete(f"/api/v1/social/showcase/{item.data['id']}/").status_code == 204
 
 
+def test_existing_connection_can_view_and_follow_hidden_profile(signed_in, user):
+    create_profile(user)
+    peer = User.objects.create_user("hidden-peer@example.com", email_verified_at=timezone.now())
+    hidden = create_profile(peer, discoverable=False)
+    path = f"/api/v1/social/profiles/{hidden.pk}/"
+    assert signed_in.get(path).status_code == 404
+    assert signed_in.post(path + "follow/").status_code == 404
+    assert signed_in.get("/api/v1/social/discover/").data["results"] == []
+
+    connection = Connection.objects.create(first=user, second=peer, requested_by=user, status="pending")
+    assert signed_in.get(path).status_code == 404
+    connection.status = "accepted"
+    connection.save(update_fields=["status"])
+    assert signed_in.get(path).status_code == 200
+    followed = signed_in.post(path + "follow/")
+    assert followed.status_code == 200
+    assert followed.data["followers_count"] == 1
+    assert followed.data["following"] is True
+    assert signed_in.get("/api/v1/social/discover/").data["results"] == []
+
+
 def test_guest_can_claim_email_without_losing_profile(client, settings, django_capture_on_commit_callbacks):
     payload = {
+        "username": "claimedguest",
         "gender": "undisclosed",
         "discoverable": True,
         "adult_confirmed": True,

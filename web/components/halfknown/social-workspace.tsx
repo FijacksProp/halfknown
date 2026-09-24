@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   LogOut,
@@ -76,6 +77,7 @@ export function SocialWorkspace({
   const [interest, setInterest] = useState('');
   const [offset, setOffset] = useState<number | null>(null);
   const [bio, setBio] = useState('');
+  const [username, setUsername] = useState(saved.profile.alias);
   const [avatar, setAvatar] = useState(saved.profile.avatar_id);
   const [intentions, setIntentions] = useState<string[]>(
     saved.profile.intentions,
@@ -158,6 +160,7 @@ export function SocialWorkspace({
   const applySelf = useCallback((profile: SocialProfile) => {
     setMe(profile);
     setBio(profile.bio);
+    setUsername(profile.alias);
     setAvatar(profile.avatar_id);
     setIntentions(profile.intentions);
     setMyInterests(profile.interests);
@@ -362,6 +365,13 @@ export function SocialWorkspace({
     setOpenChat(row);
     setTab('connections');
     setSelected(null);
+    if (window.matchMedia('(max-width: 600px)').matches)
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+  }
+  function closeConversation() {
+    setOpenChat(null);
+    if (window.matchMedia('(max-width: 600px)').matches)
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
   }
   async function sendMessage(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -663,7 +673,7 @@ export function SocialWorkspace({
         )}
 
         {tab === 'connections' && (
-          <>
+          <div className={openChat ? 'connections-view chat-open' : 'connections-view'}>
             <div className="simple-heading">
               <span className="section-kicker">
                 KEEP THE CONVERSATION GOING
@@ -673,7 +683,7 @@ export function SocialWorkspace({
               </h1>
               <p>Messages are free when both people choose to connect.</p>
             </div>
-            <div className="connections-layout">
+            <div className={openChat ? 'connections-layout chat-open' : 'connections-layout'}>
               <aside className="conversation-list">
                 <h2>Requests</h2>
                 {pending.length ? (
@@ -778,7 +788,14 @@ export function SocialWorkspace({
                 {openChat ? (
                   <>
                     <div className="message-header">
-                      <button onClick={() => setSelected(openChat.peer)}>
+                      <button
+                        className="chat-back"
+                        onClick={closeConversation}
+                        aria-label="Back to conversations"
+                      >
+                        <ArrowLeft size={20} />
+                      </button>
+                      <button className="message-peer" onClick={() => setSelected(openChat.peer)}>
                         <Avatar id={openChat.peer.avatar_id} size="small" />
                         <span>
                           <strong>{openChat.peer.alias}</strong>
@@ -850,7 +867,7 @@ export function SocialWorkspace({
                 )}
               </section>
             </div>
-          </>
+          </div>
         )}
 
         {tab === 'me' && !me && (
@@ -894,8 +911,24 @@ export function SocialWorkspace({
                   <div>
                     <h2>{me.alias}</h2>
                     <span>{me.avatar_group} character</span>
+                    <small className="profile-follow-count">
+                      {me.followers_count} {me.followers_count === 1 ? 'follower' : 'followers'}
+                    </small>
                   </div>
                 </div>
+                <label className="form-label">
+                  Your username
+                  <input
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value.toLowerCase())}
+                    minLength={3}
+                    maxLength={24}
+                    pattern="[a-z][a-z0-9_]{2,23}"
+                    title="3–24 letters, numbers or underscores; start with a letter"
+                    required
+                  />
+                  <small>3–24 letters, numbers or underscores. Start with a letter.</small>
+                </label>
                 <label className="form-label">
                   Your introduction
                   <textarea
@@ -959,12 +992,13 @@ export function SocialWorkspace({
                   onClick={() =>
                     void act(async () => {
                       const profile = await api.saveSocialMe({
+                        ...(username.trim() !== me.alias ? { username: username.trim() } : {}),
                         bio,
                         intentions,
                         interests: myInterests,
                         discoverable,
                       });
-                      setMe(profile);
+                      applySelf(profile);
                       setNotice('Your space is updated.');
                     })
                   }
@@ -1175,30 +1209,18 @@ export function SocialWorkspace({
         )}
 
         {tab === 'quick' && (
-          <>
-            <div className="simple-heading">
-              <span className="section-kicker">LET CHANCE HAVE A TURN</span>
-              <h1>
-                Meet someone <em>unexpected.</em>
-              </h1>
-              <p>
-                A private conversation with someone online. You can leave
-                whenever you like.
-              </p>
-            </div>
-            <div className="quick-wrap">
-              <ChatWorkspace
-                saved={{
-                  ...saved,
-                  profile: {
-                    ...saved.profile,
-                    avatar_id: me?.avatar_id ?? saved.profile.avatar_id,
-                    interests: me?.interests ?? saved.profile.interests,
-                  },
-                }}
-              />
-            </div>
-          </>
+          <div className="quick-wrap">
+            <ChatWorkspace
+              saved={{
+                ...saved,
+                profile: {
+                  ...saved.profile,
+                  avatar_id: me?.avatar_id ?? saved.profile.avatar_id,
+                  interests: me?.interests ?? saved.profile.interests,
+                },
+              }}
+            />
+          </div>
         )}
       </main>
 
@@ -1230,6 +1252,9 @@ export function SocialWorkspace({
             <div className="drawer-body">
               <span className="section-kicker">GET TO KNOW ME</span>
               <h2>{selected.alias}</h2>
+              <span className="profile-follow-count">
+                {selected.followers_count} {selected.followers_count === 1 ? 'follower' : 'followers'}
+              </span>
               <p className="drawer-bio">
                 {selected.bio ||
                   selected.prompt_answer ||

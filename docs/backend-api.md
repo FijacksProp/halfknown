@@ -38,13 +38,13 @@ API responses include private/no-store cache controls, including authentication 
 | GET | `/api/v1/me/` | Private owner account and onboarding status |
 | GET | `/api/v1/catalog/` | Allowed profile/preference values and policy version |
 | GET | `/api/v1/identity-preview/` | Generate an unreserved alias/avatar suggestion |
-| POST | `/api/v1/random-access/` | Create/prepare a session-owned guest identity after adult and policy confirmation |
+| POST | `/api/v1/random-access/` | Create/prepare a session-owned guest identity with a chosen unique username after adult and policy confirmation |
 | GET | `/api/v1/profile/` | Read current owner's profile/preferences |
 | POST | `/api/v1/profile/` | Create onboarding profile only; 409 if it already exists |
 | PUT | `/api/v1/profile/` | Atomically create/update onboarding profile |
 | PUT | `/api/v1/preferences/` | Replace current owner's preferences |
 | POST | `/api/v1/blocks/` | Idempotently block a profile |
-| GET/PATCH | `/api/v1/social/me/` | Read/edit the owner's social profile and visibility |
+| GET/PATCH | `/api/v1/social/me/` | Read/edit the owner's username, social profile, and visibility |
 | GET | `/api/v1/social/discover/` | Search opt-in profiles; filter by `q`, `interest`, or `group`; paginate with `offset` |
 | GET | `/api/v1/social/profiles/<id>/` | Public profile and showcase, subject to visibility and blocks |
 | POST/DELETE | `/api/v1/social/profiles/<id>/follow/` | Follow or unfollow |

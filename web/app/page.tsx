@@ -20,6 +20,7 @@ export default function Home() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [saved, setSaved] = useState<SavedProfile | null>(null);
+  const [username, setUsername] = useState('');
   const [gender, setGender] = useState('undisclosed');
   const [interests, setInterests] = useState<string[]>([]);
   const [adult, setAdult] = useState(false);
@@ -103,6 +104,7 @@ export default function Home() {
     if (!catalog) return;
     await perform(async () => {
       const result = await api.randomAccess({
+        username,
         gender,
         interests,
         discoverable,
@@ -206,6 +208,21 @@ export default function Home() {
               Tell us a little about yourself. We’ll introduce you to one of
               Halfknown’s creature groups when you join.
             </p>
+            <label className="form-label">
+              Your username
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value.toLowerCase())}
+                autoComplete="username"
+                minLength={3}
+                maxLength={24}
+                pattern="[a-z][a-z0-9_]{2,23}"
+                title="3–24 letters, numbers or underscores; start with a letter"
+                placeholder="yourname"
+                required
+              />
+              <small>3–24 letters, numbers or underscores. Start with a letter.</small>
+            </label>
             <label className="form-label">
               Your gender <span>(only shared if you choose to)</span>
               <select

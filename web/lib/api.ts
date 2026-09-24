@@ -67,6 +67,7 @@ export type Account = {
   is_guest: boolean;
 };
 export type RandomAccess = {
+  username: string;
   gender: string;
   adult_confirmed: boolean;
   accepted_terms: boolean;
@@ -120,6 +121,7 @@ export type Onboarding = Omit<
   Profile,
   'id' | 'alias' | 'bio' | 'discoverable' | 'avatar_group' | 'avatar_id'
 > & {
+  username: string;
   birth_date: string;
   accepted_terms: boolean;
   accepted_guidelines: boolean;
@@ -268,7 +270,7 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
           | 'intentions'
           | 'discoverable'
         >
-      >,
+      > & { username?: string },
     ) => request<SocialProfile>('/social/me/', 'PATCH', values),
     discover: (
       params: {

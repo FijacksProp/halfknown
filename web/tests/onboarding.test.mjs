@@ -57,7 +57,8 @@ test('interest selection is reversible, unique, and capped at five', () => {
 
 test('incomplete steps cannot move forward', () => {
   const draft = emptyDraft();
-  assert.equal(stepValid(1, draft), true);
+  assert.equal(stepValid(1, draft), false);
+  assert.equal(stepValid(1, { ...draft, username: 'river_fox' }), true);
   assert.equal(stepValid(1, { ...draft, intentions: [] }), false);
   assert.equal(stepValid(2, draft), false);
   assert.equal(stepValid(3, draft), false);

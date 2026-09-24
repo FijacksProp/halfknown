@@ -19,14 +19,14 @@
 - A visitor chooses one of six illustrated identities across human, animal, alien, goblin, and vampire groups; selects optional interests and a self-described gender; confirms 18+; accepts the policies; and decides whether to appear in Discover.
 - A temporary guest account starts without email. The owner can attach a new email through a six-digit verification code and retain the same profile, connections, showcase, and messages.
 - An email already attached to another account requires signing in to that account. Guest identities are not silently merged.
-- The alias is generated server-side. The avatar may be changed later. Real photos and identity verification are future features, not simulated in the current UI.
+- A visitor chooses a unique username during entry. Existing members can change theirs in My space; older generated aliases remain until changed. The avatar may be changed within the assigned character group. Real photos and identity verification are future features, not simulated in the current UI.
 
 ### Discover and profiles
 
 - Discover lists only active, opt-in profiles and excludes the viewer and anyone blocked in either direction.
 - People can search aliases and introductions and filter by interest or character group. No gender preference or paywall is present yet.
 - A profile shows the character, alias, introduction, intentions, interests, follower count, and up to six showcase items.
-- The owner may edit the introduction, character, intentions, interests, and visibility. Gender changes and independent age verification need a separate future flow.
+- The owner may edit their username, introduction, character, intentions, interests, and visibility. Gender changes and independent age verification need a separate future flow.
 
 ### Relationships and chat
 

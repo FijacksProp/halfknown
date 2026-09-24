@@ -29,6 +29,7 @@ def people(profile_payload):
         client.force_login(user)
         payload = {
             **profile_payload,
+            "username": f"chatperson{index}",
             "gender": "woman" if index == 1 else "man",
             "preferences": {
                 **profile_payload["preferences"],

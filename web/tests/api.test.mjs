@@ -74,6 +74,7 @@ test('guest-first access sends adult consent without requiring an email', async 
   ]);
   assert.deepEqual(
     await api.randomAccess({
+      username: 'quietcomet',
       gender: 'undisclosed',
       adult_confirmed: true,
       accepted_terms: true,
@@ -84,6 +85,7 @@ test('guest-first access sends adult consent without requiring an email', async 
   );
   assert.equal(calls[1].url, '/api/v1/random-access/');
   assert.equal(JSON.parse(calls[1].body).adult_confirmed, true);
+  assert.equal(JSON.parse(calls[1].body).username, 'quietcomet');
   assert.equal(JSON.parse(calls[1].body).email, undefined);
 });
 
