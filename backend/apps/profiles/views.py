@@ -42,7 +42,6 @@ class RandomAccessInput(serializers.Serializer):
     interests = serializers.ListField(
         child=serializers.ChoiceField(choices=INTERESTS), required=False, max_length=5
     )
-    discoverable = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         if not attrs["adult_confirmed"]:
@@ -98,7 +97,7 @@ class RandomAccessView(APIView):
                     "interests": values.get("interests", []),
                     "languages": ["en"],
                     "conversation_style": "lighthearted",
-                    "discoverable": values["discoverable"],
+                    "discoverable": False,
                 },
             )
             profile.gender = values["gender"]
@@ -116,8 +115,8 @@ class RandomAccessView(APIView):
             if "interests" in values:
                 profile.interests = values["interests"]
             # Existing anonymous profiles remain private until the owner opts in.
-            if values["discoverable"]:
-                profile.discoverable = True
+            if not profile.photo or profile.photo_status != "approved":
+                profile.discoverable = False
             profile.save(
                 update_fields=[
                     "gender",

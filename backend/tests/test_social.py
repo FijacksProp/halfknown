@@ -14,6 +14,8 @@ pytestmark = pytest.mark.django_db
 
 
 def create_profile(user, **values):
+    values.setdefault("photo", "profile-photos/test.webp")
+    values.setdefault("photo_status", "approved")
     return Profile.objects.create(
         user=user,
         avatar_id=values.pop("avatar_id", "alien-01"),

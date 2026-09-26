@@ -47,6 +47,8 @@ API responses include private/no-store cache controls, including authentication 
 | GET/PATCH | `/api/v1/social/me/` | Read/edit the owner's username, social profile, and visibility |
 | GET | `/api/v1/social/discover/` | Search opt-in profiles; filter by `q`, `interest`, or `group`; paginate with `offset` |
 | GET | `/api/v1/social/profiles/<id>/` | Public profile and showcase, subject to visibility and blocks |
+| POST / DELETE | `/api/v1/social/me/photo/` | Upload or remove the owner's real photo; upload enters manual review and hides Discover profile |
+| GET | `/api/v1/social/profiles/<id>/photo/` | Authenticated photo response; pending photos visible only to owner and staff |
 | POST/DELETE | `/api/v1/social/profiles/<id>/follow/` | Follow or unfollow |
 | POST/DELETE | `/api/v1/social/profiles/<id>/connect/` | Request/reciprocate or remove a connection |
 | GET | `/api/v1/social/connections/` | Accepted and pending connections, newest-message preview/time, and unread count |
@@ -111,7 +113,7 @@ The selected values must come from `/api/v1/catalog/`. An example PUT body:
 }
 ```
 
-The server generates a unique alias on first completion and preserves it on update. Preview identities are illustrative, not reserved. Illustrated avatar groups now include human, animal, alien, goblin, and vampire. They are fictional characters, not member photos or identity verification.
+Onboarding asks for a username and assigns a random nonhuman creature group and portrait. Creature portraits are fictional identities, not member photos or identity verification. Discover requires a separate real photo: an upload is processed into metadata-stripped WebP, reviewed by an admin, then the owner can opt in to public Discover. Quick Meet and signup do not require a real photo.
 
 PrivateProfile stores birth date and consent separately. Profile responses omit email, birth date, authentication information, and the internal account relation. The owner serializer remains private. The social discovery serializer has a separate public allowlist and exposes only profiles whose owners opted in; older anonymous accounts are hidden by migration.
 

@@ -1,9 +1,9 @@
 const creatureGroups = [
-  'human', 'animal', 'alien', 'goblin', 'vampire', 'elf', 'fae', 'android',
+  'animal', 'alien', 'goblin', 'vampire', 'elf', 'fae', 'android',
 ] as const;
 
 const portraitIds = new Set(
-  creatureGroups.flatMap((group) => [`${group}-male`, `${group}-female`]),
+  creatureGroups.flatMap((group) => [`${group}-male`, `${group}-male-02`, `${group}-female`, `${group}-female-02`]),
 );
 
 export function Avatar({

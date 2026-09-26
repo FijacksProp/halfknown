@@ -124,6 +124,20 @@ test('social discovery and connection calls use the intended routes', async () =
     assert.equal(calls[index].headers.get('X-CSRFToken'), 't');
 });
 
+test('profile photo upload sends multipart data with CSRF and no JSON content type', async () => {
+  const { api, calls } = harness([
+    json({ csrf_token: 'photo-token' }),
+    json({ photo_status: 'pending', photo_url: '/api/v1/social/profiles/id/photo/' }),
+  ]);
+  const photo = new File(['image-bytes'], 'portrait.jpg', { type: 'image/jpeg' });
+  const result = await api.uploadSocialPhoto(photo);
+  assert.equal(result.photo_status, 'pending');
+  assert.equal(calls[1].url, '/api/v1/social/me/photo/');
+  assert.equal(calls[1].headers.get('X-CSRFToken'), 'photo-token');
+  assert.equal(calls[1].headers.has('Content-Type'), false);
+  assert.equal(calls[1].body.get('photo'), photo);
+});
+
 test('quick chat can read and decline an incoming keep-in-touch request', async () => {
   const incoming = {
     id: 'request-id',

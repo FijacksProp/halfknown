@@ -1,16 +1,20 @@
 from django.db import connection as db_connection
 from django.db import transaction
 from django.db.models import F, OuterRef, Q, Subquery
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import VerifiedUser
 from apps.matching.services import block_peer, chat_eligible, chat_for, notify
 from apps.moderation.models import Block
 from apps.profiles.catalog import AVATAR_GROUPS, AVATARS, INTENTIONS, INTERESTS, avatar_choices
 from apps.profiles.models import Profile
+from apps.profiles.photos import prepare_profile_photo
 from apps.profiles.serializers import UsernameField
 
 from .models import Connection, DirectMessage, Follow, ShowcaseItem, SocialReport
@@ -40,6 +44,12 @@ def public_profile(profile, viewer, *, known_connection=None, known_connection_d
         "bio": profile.bio,
         "prompt_answer": profile.prompt_answer,
         "discoverable": profile.discoverable if owner else None,
+        "photo_url": (
+            f"/api/v1/social/profiles/{profile.pk}/photo/"
+            if profile.photo and (owner or profile.photo_status == "approved")
+            else None
+        ),
+        "photo_status": profile.photo_status if owner else None,
         "verified": False,
         "following": False
         if owner
@@ -48,7 +58,9 @@ def public_profile(profile, viewer, *, known_connection=None, known_connection_d
         "connection": (
             known_connection_data
             if known_connection_data is not None
-            else connection_data(connection, viewer) if connection else None
+            else connection_data(connection, viewer)
+            if connection
+            else None
         ),
         "showcase": [showcase_data(item) for item in profile.user.showcase.order_by("-created_at")[:6]],
     }
@@ -69,9 +81,7 @@ def pair_ids(user, peer):
 
 
 def connection_for(user, peer):
-    return Connection.objects.filter(
-        Q(first=user, second=peer) | Q(first=peer, second=user)
-    ).first()
+    return Connection.objects.filter(Q(first=user, second=peer) | Q(first=peer, second=user)).first()
 
 
 def request_connection(user, peer):
@@ -92,7 +102,10 @@ def request_connection(user, peer):
             connection.save(update_fields=["status", "requested_by", "updated_at"])
             changed = True
         if changed:
-            notify([first.pk, second.pk], {"type": "social.connection.changed", "connection_id": str(connection.pk)})
+            notify(
+                [first.pk, second.pk],
+                {"type": "social.connection.changed", "connection_id": str(connection.pk)},
+            )
     return connection, created
 
 
@@ -164,6 +177,12 @@ class SelfView(APIView):
         profile = get_object_or_404(Profile, user=request.user)
         data = ProfileEditInput(data=request.data, context={"request": request})
         data.is_valid(raise_exception=True)
+        if data.validated_data.get("discoverable") and (
+            not profile.photo or profile.photo_status != "approved"
+        ):
+            raise serializers.ValidationError(
+                {"discoverable": "Upload a real photo and wait for approval before joining Discover."}
+            )
         if "avatar_id" in data.validated_data:
             group = profile.avatar_group or profile.avatar_id.split("-")[0]
             if data.validated_data["avatar_id"] not in avatar_choices(group, profile.gender):
@@ -182,11 +201,71 @@ class SelfView(APIView):
         return Response(public_profile(profile, request.user))
 
 
+class SelfPhotoView(APIView):
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        profile = get_object_or_404(Profile, user=request.user)
+        upload = request.FILES.get("photo")
+        if upload is None:
+            raise serializers.ValidationError({"photo": "Choose a photo to upload."})
+        name, content = prepare_profile_photo(upload)
+        old_photo_name = profile.photo.name
+        profile.photo.save(name, content, save=False)
+        profile.photo_status = "pending"
+        profile.discoverable = False
+        profile.save(update_fields=["photo", "photo_status", "discoverable", "updated_at"])
+        if old_photo_name:
+            profile.photo.storage.delete(old_photo_name)
+        return Response(public_profile(profile, request.user))
+
+    def delete(self, request):
+        profile = get_object_or_404(Profile, user=request.user)
+        old_photo_name = profile.photo.name
+        profile.photo = ""
+        profile.photo_status = "none"
+        profile.discoverable = False
+        profile.save(update_fields=["photo", "photo_status", "discoverable", "updated_at"])
+        if old_photo_name:
+            profile.photo.storage.delete(old_photo_name)
+        return Response(public_profile(profile, request.user))
+
+
+class ProfilePhotoView(APIView):
+    class StaffOrVerifiedUser(VerifiedUser):
+        def has_permission(self, request, view):
+            return bool(
+                request.user.is_authenticated
+                and request.user.is_active
+                and (request.user.is_staff or request.user.email_verified_at)
+            )
+
+    permission_classes = [StaffOrVerifiedUser]
+
+    def get(self, request, profile_id):
+        profile = get_object_or_404(
+            Profile.objects.select_related("user"), pk=profile_id, user__is_active=True
+        )
+        if not profile.photo or (not request.user.is_staff and profile.user_id in blocked_ids(request.user)):
+            return Response({"detail": "Photo unavailable."}, status=404)
+        if not request.user.is_staff and profile.user_id != request.user.pk:
+            if profile.photo_status != "approved" or not visible_target(request.user, profile_id):
+                return Response({"detail": "Photo unavailable."}, status=404)
+        response = FileResponse(profile.photo.open("rb"), content_type="image/webp")
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+
+
 class DiscoverView(APIView):
     def get(self, request):
         if not Profile.objects.filter(user=request.user).exists():
             return Response({"detail": "Complete your profile first."}, status=409)
-        profiles = Profile.objects.filter(discoverable=True, user__is_active=True).exclude(user=request.user)
+        profiles = (
+            Profile.objects.filter(discoverable=True, photo_status="approved", user__is_active=True)
+            .exclude(photo="")
+            .exclude(user=request.user)
+        )
         profiles = profiles.exclude(user_id__in=blocked_ids(request.user))
         interest = request.query_params.get("interest", "")
         group = request.query_params.get("group", "")
@@ -277,7 +356,10 @@ class ConnectionAcceptView(APIView):
             return Response({"detail": "Request unavailable."}, status=404)
         connection.status = "accepted"
         connection.save(update_fields=["status", "updated_at"])
-        notify([connection.first_id, connection.second_id], {"type": "social.connection.changed", "connection_id": str(connection.pk)})
+        notify(
+            [connection.first_id, connection.second_id],
+            {"type": "social.connection.changed", "connection_id": str(connection.pk)},
+        )
         return Response(connection_data(connection, request.user))
 
 
@@ -360,7 +442,8 @@ class ConnectionsView(APIView):
                         "last_message": (
                             {
                                 "body": connection.last_message_body,
-                                "mine": str(connection.last_message_sender_id).replace("-", "") == request.user.pk.hex,
+                                "mine": str(connection.last_message_sender_id).replace("-", "")
+                                == request.user.pk.hex,
                                 "created_at": connection.last_message_created_at.isoformat(),
                             }
                             if connection.last_message_created_at

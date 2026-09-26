@@ -118,7 +118,10 @@ def test_new_profile_gets_matching_portrait_and_cannot_change_group(
     response = signed_in.put("/api/v1/profile/", profile_payload, format="json")
     assert response.status_code == 201
     assigned = response.data["profile"]
-    assert assigned["avatar_id"] == f"{assigned['avatar_group']}-{suffix}"
+    assert assigned["avatar_id"] in (
+        f"{assigned['avatar_group']}-{suffix}",
+        f"{assigned['avatar_group']}-{suffix}-02",
+    )
     other_group = next(group for group in AVATAR_GROUPS if group != assigned["avatar_group"])
     rejected = signed_in.patch(
         "/api/v1/social/me/", {"avatar_id": f"{other_group}-{suffix}"}, format="json"

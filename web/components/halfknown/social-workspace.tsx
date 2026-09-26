@@ -86,6 +86,7 @@ export function SocialWorkspace({
     saved.profile.interests,
   );
   const [discoverable, setDiscoverable] = useState(saved.profile.discoverable);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [showcaseKind, setShowcaseKind] = useState<
     'talent' | 'project' | 'interest'
   >('talent');
@@ -111,9 +112,9 @@ export function SocialWorkspace({
     catalog.avatar_groups[me?.avatar_group ?? ''] ?? []
   ).filter((id) =>
     me?.gender === 'woman'
-      ? id.endsWith('-female')
+      ? id.includes('-female')
       : me?.gender === 'man'
-        ? id.endsWith('-male')
+        ? id.includes('-male')
         : true,
   );
 
@@ -479,8 +480,8 @@ export function SocialWorkspace({
                   People worth <em>meeting.</em>
                 </h1>
                 <p>
-                  Curious humans, otherworldly characters, and everyone in
-                  between. Find someone who shares your kind of interesting.
+                  Real people, unexpected circles. Find someone who shares
+                  your kind of interesting.
                 </p>
                 <div className="discover-hero-actions">
                   <button
@@ -501,13 +502,13 @@ export function SocialWorkspace({
                 <div className="discover-hero-orbit discover-hero-orbit--blue" />
                 <figure className="discover-character discover-character--human">
                   <Image
-                    src="/avatars/concepts/human-female.png"
-                    alt="Human character"
+                    src="/avatars/concepts/elf-female.png"
+                    alt="Elf character"
                     width={520}
                     height={520}
                     priority
                   />
-                  <figcaption>Human</figcaption>
+                  <figcaption>Elf</figcaption>
                 </figure>
                 <figure className="discover-character discover-character--alien">
                   <Image
@@ -542,6 +543,15 @@ export function SocialWorkspace({
                 </div>
               </div>
             </section>
+            {me && !me.discoverable && (
+              <aside className="discover-entry-note">
+                <div>
+                  <strong>{me.photo_status === 'pending' ? 'Your photo is under review' : me.photo_status === 'approved' ? 'Ready to be seen?' : 'Want to appear in Discover?'}</strong>
+                  <p>{me.photo_status === 'pending' ? 'You can keep browsing and using Quick Meet while we review it.' : me.photo_status === 'approved' ? 'Switch on Discover visibility in My space whenever you are ready.' : 'Add a real photo in My space. Quick Meet stays available without one.'}</p>
+                </div>
+                <button type="button" onClick={() => chooseTab('me')}>Go to My space <ArrowRight size={17} /></button>
+              </aside>
+            )}
             <div className="discovery-layout">
               <aside className="filter-panel">
                 <h2>Find your kind of interesting</h2>
@@ -613,9 +623,9 @@ export function SocialWorkspace({
                         onClick={() => setSelected(person)}
                       >
                         <div className="person-card-art">
-                          <Avatar id={person.avatar_id} size="large" />
+                          {person.photo_url && <Image className="person-photo" src={person.photo_url} alt="" fill unoptimized />}
                           <span className="group-label">
-                            {person.avatar_group}
+                            <Avatar id={person.avatar_id} size="small" /> {person.avatar_group}
                           </span>
                         </div>
                         <div className="person-card-copy">
@@ -916,6 +926,39 @@ export function SocialWorkspace({
                     </small>
                   </div>
                 </div>
+                <div className="photo-settings">
+                  <div className="photo-settings-preview">
+                    {me.photo_url ? <Image src={me.photo_url} alt="Your profile" fill unoptimized /> : <Avatar id={me.avatar_id} size="large" />}
+                  </div>
+                  <div>
+                    <h3>Your real photo</h3>
+                    <p>Upload a clear photo of yourself to appear in Discover. Quick Meet still uses your creature portrait.</p>
+                    <label className="photo-upload-button">
+                      {photoUploading ? 'Uploading…' : me.photo_url ? 'Replace photo' : 'Upload photo'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        disabled={photoUploading || busy}
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          if (!file) return;
+                          const input = event.currentTarget;
+                          setPhotoUploading(true);
+                          setError('');
+                          void api.uploadSocialPhoto(file).then((profile) => {
+                            applySelf(profile);
+                            setNotice('Photo uploaded. It will appear after review.');
+                          }).catch((reason) => setError(reason instanceof Error ? reason.message : 'Photo upload failed.'))
+                            .finally(() => { setPhotoUploading(false); input.value = ''; });
+                        }}
+                      />
+                    </label>
+                    {me.photo_status === 'pending' && <small>Awaiting photo review. Your profile is hidden from Discover.</small>}
+                    {me.photo_status === 'rejected' && <small>This photo was not approved. Please upload a different one.</small>}
+                    {me.photo_status === 'approved' && <small>Photo approved. You can choose to appear in Discover below.</small>}
+                    {me.photo_url && <button type="button" className="photo-remove" disabled={busy || photoUploading} onClick={() => void act(async () => { applySelf(await api.removeSocialPhoto()); setNotice('Photo removed. Your profile is hidden from Discover.'); })}>Remove photo</button>}
+                  </div>
+                </div>
                 <label className="form-label">
                   Your username
                   <input
@@ -977,12 +1020,13 @@ export function SocialWorkspace({
                     aria-label="Show me in Discover"
                     type="checkbox"
                     checked={discoverable}
+                    disabled={me.photo_status !== 'approved' || !me.photo_url}
                     onChange={(e) => setDiscoverable(e.target.checked)}
                   />
                   <span>
                     <strong>Show me in Discover</strong>
                     <small>
-                      People can see your character, introduction and showcase.
+                      Your approved photo, creature group and profile become visible to others.
                     </small>
                   </span>
                 </label>
@@ -1178,11 +1222,11 @@ export function SocialWorkspace({
                       className={avatar === id ? 'chosen' : ''}
                       key={id}
                       onClick={() => setAvatar(id)}
-                      aria-label={`${me.avatar_group} portrait ${id.endsWith('-female') ? 'female' : 'male'}`}
+                      aria-label={`${me.avatar_group} portrait ${id.includes('-female') ? 'female' : 'male'}`}
                       aria-pressed={avatar === id}
                     >
                       <Avatar id={id} size="medium" />
-                      <span>{id.endsWith('-female') ? 'Feminine' : 'Masculine'}</span>
+                      <span>{id.includes('-female') ? 'Feminine' : 'Masculine'}</span>
                     </button>
                 ))}
               </div>
@@ -1246,8 +1290,8 @@ export function SocialWorkspace({
               <X size={20} />
             </button>
             <div className="drawer-art">
-              <Avatar id={selected.avatar_id} size="large" />
-              <span>{selected.avatar_group} character</span>
+              {selected.photo_url ? <Image className="drawer-photo" src={selected.photo_url} alt={selected.alias} fill unoptimized /> : <Avatar id={selected.avatar_id} size="large" />}
+              <span><Avatar id={selected.avatar_id} size="small" /> {selected.avatar_group} character</span>
             </div>
             <div className="drawer-body">
               <span className="section-kicker">GET TO KNOW ME</span>

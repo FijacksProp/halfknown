@@ -26,7 +26,6 @@ export default function Home() {
   const [adult, setAdult] = useState(false);
   const [terms, setTerms] = useState(false);
   const [guidelines, setGuidelines] = useState(false);
-  const [discoverable, setDiscoverable] = useState(false);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [challenge, setChallenge] = useState('');
@@ -107,7 +106,6 @@ export default function Home() {
         username,
         gender,
         interests,
-        discoverable,
         adult_confirmed: adult,
         accepted_terms: terms,
         accepted_guidelines: guidelines,
@@ -254,15 +252,6 @@ export default function Home() {
               ))}
             </div>
             <div className="entry-checks">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={discoverable}
-                  onChange={(e) => setDiscoverable(e.target.checked)}
-                />{' '}
-                Show my character and profile in Discover. I can change this
-                later.
-              </label>
               <label>
                 <input
                   type="checkbox"

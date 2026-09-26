@@ -3,6 +3,8 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 
 def new_alias():
@@ -34,6 +36,17 @@ class Profile(models.Model):
     conversation_style = models.CharField(max_length=24)
     prompt_answer = models.CharField(max_length=280, blank=True)
     bio = models.CharField(max_length=300, blank=True)
+    photo = models.ImageField(upload_to="profile-photos/", blank=True)
+    photo_status = models.CharField(
+        max_length=12,
+        choices=[
+            ("none", "No photo"),
+            ("pending", "Pending review"),
+            ("approved", "Approved"),
+            ("rejected", "Rejected"),
+        ],
+        default="none",
+    )
     discoverable = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -55,3 +68,9 @@ class MatchPreferences(models.Model):
                 condition=models.Q(max_age__gte=models.F("min_age")), name="matching_age_order"
             ),
         ]
+
+
+@receiver(post_delete, sender=Profile)
+def remove_profile_photo(sender, instance, **kwargs):
+    if instance.photo:
+        instance.photo.delete(save=False)

@@ -74,7 +74,6 @@ export type RandomAccess = {
   accepted_guidelines: boolean;
   policy_version: string;
   interests?: string[];
-  discoverable?: boolean;
 };
 export type ShowcaseItem = {
   id: string;
@@ -105,6 +104,8 @@ export type SocialProfile = {
   bio: string;
   prompt_answer: string;
   discoverable: boolean | null;
+  photo_url: string | null;
+  photo_status: 'none' | 'pending' | 'approved' | 'rejected' | null;
   verified: boolean;
   following: boolean;
   followers_count: number;
@@ -172,7 +173,7 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
       // changes in another tab. Never blindly replay a failed write.
       const csrf = await request<{ csrf_token: string }>('/auth/csrf/');
       headers.set('X-CSRFToken', csrf.csrf_token);
-      headers.set('Content-Type', 'application/json');
+      if (!(body instanceof FormData)) headers.set('Content-Type', 'application/json');
     }
     let response: Response;
     try {
@@ -182,7 +183,7 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
         credentials: 'same-origin',
         cache: 'no-store',
         signal: AbortSignal.timeout(20_000),
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
       });
     } catch {
       throw new ApiError(
@@ -259,6 +260,12 @@ export function createApi(fetcher: typeof fetch = (...args) => fetch(...args)) {
       request<Preferences>('/preferences/', 'PUT', preferences),
     logout: () => request<void>('/auth/logout/', 'POST'),
     socialMe: () => request<SocialProfile>('/social/me/'),
+    uploadSocialPhoto: (photo: File) => {
+      const form = new FormData();
+      form.set('photo', photo);
+      return request<SocialProfile>('/social/me/photo/', 'POST', form);
+    },
+    removeSocialPhoto: () => request<SocialProfile>('/social/me/photo/', 'DELETE'),
     saveSocialMe: (
       values: Partial<
         Pick<

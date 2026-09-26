@@ -17,8 +17,8 @@ INTERESTS = (
     "comedy",
 )
 AVATAR_GROUPS = {
-    group: (f"{group}-male", f"{group}-female")
-    for group in ("human", "animal", "alien", "goblin", "vampire", "elf", "fae", "android")
+    group: (f"{group}-male", f"{group}-male-02", f"{group}-female", f"{group}-female-02")
+    for group in ("animal", "alien", "goblin", "vampire", "elf", "fae", "android")
 }
 AVATARS = tuple(avatar for group in AVATAR_GROUPS.values() for avatar in group)
 STYLES = ("playful", "thoughtful", "deep", "lighthearted", "adventurous", "supportive")
@@ -27,9 +27,9 @@ STYLES = ("playful", "thoughtful", "deep", "lighthearted", "adventurous", "suppo
 def avatar_choices(group, gender):
     choices = AVATAR_GROUPS.get(group, ())
     if gender == "woman":
-        return tuple(avatar for avatar in choices if avatar.endswith("-female"))
+        return tuple(avatar for avatar in choices if "-female" in avatar)
     if gender == "man":
-        return tuple(avatar for avatar in choices if avatar.endswith("-male"))
+        return tuple(avatar for avatar in choices if "-male" in avatar)
     return choices
 
 

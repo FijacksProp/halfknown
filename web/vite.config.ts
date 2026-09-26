@@ -49,7 +49,7 @@ export default defineConfig(async ({ mode, command, isPreview }) => {
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
     server: {
-      host: '127.0.0.1',
+      host: process.env.VITE_DEV_HOST || '127.0.0.1',
       port: 3000,
       strictPort: true,
       watch: isCodexSeatbeltSandbox

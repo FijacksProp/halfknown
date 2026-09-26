@@ -12,6 +12,7 @@ This branch starts production hardening; it does not deploy Halfknown or certify
 - Incoming WebSocket frames are limited to 20 per 10 seconds per connection in addition to the existing size, origin, and session checks. Edge connection/IP limits are still required.
 - Customer-facing screens no longer contain development banners or obsolete feature promises. Real policy links are supplied by the backend catalog. Local email capture remains a local-only tool, not a production delivery mechanism.
 - Guest-first random chat uses a session-owned server identity and does not expose its internal placeholder email. Production still needs guest retention and device/IP abuse controls before public access.
+- Discover now requires an uploaded real photo, manual admin approval, and owner opt-in. Pending photos are available only to the owner and staff through an authenticated endpoint. Human illustration avatars have been retired; Quick Meet keeps creature portraits.
 
 ## Required configuration and processes
 
@@ -35,6 +36,8 @@ The API, worker, and scheduler are separate supervised processes. Provide a writ
 The public reverse proxy must terminate TLS and route `/api/`, `/ws/`, and `/admin/` to Django under the same browser origin as the frontend. Forward WebSocket upgrades, preserve the browser Origin and cookies, disable API caching, and serve collected Django admin static files. The Vite development proxy is **not** production routing. Only set `TRUST_PROXY_SSL_HEADER=True` when the trusted proxy overwrites that header and direct backend access is blocked.
 
 The frontend still builds a Worker artifact. A hosting provider and production origin router are not selected/configured yet. Never deploy the frontend alone and assume it can reach the local Django backend.
+
+Profile photos are stored under `MEDIA_ROOT` locally and are intentionally not served as public static media. Before any hosted test with real users, configure durable **private** object storage shared by all Django instances, backups and deletion lifecycle, upload-rate limits, and a staffed photo-review process. Render's ephemeral filesystem is not suitable for these uploads. Keep `/api/v1/social/profiles/<id>/photo/` behind Django authentication and authorization; do not expose the storage bucket publicly.
 
 ## Release gates still open
 
